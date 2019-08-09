@@ -1,6 +1,8 @@
+#! /usr/bin/env python
+
 from action_interrupt.msg import InterruptActionStatus
 from action_interrupt.srv import InterruptController
-from action_interrupt.srv import InterruptControllerResult
+from action_interrupt.srv import InterruptControllerResponse
 from actionlib_msgs.msg import GoalID
 import argparse
 from control_msgs.msg import FollowJointTrajectoryAction
@@ -19,7 +21,7 @@ LOG_LEVELS = {
 class ActionStatus(object):
     def __init__(self, name, goal_msg):
         self.status = InterruptActionStatus(name=name,
-                                            id=goal_msg.goal_id.id,
+                                            id=goal_msg.goal_id,
                                             goal=goal_msg.goal)
 
     def update(self, feedback_msg):
@@ -50,21 +52,24 @@ class MonitorController(object):
         self.active_command = ActionStatus(self.ns, msg)
 
     def _feedback_cb(self, msg):
-        if self.active_command.status.id == msg.status.goal_id.id:
+        ac = self.active_command
+        if ac and ac.status.id == msg.status.goal_id.id:
             self.active_command.update(msg)
 
     def _result_cb(self, msg):
-        if self.active_command.status.id == msg.status.goal_id.id:
+        ac = self.active_command
+        if ac and ac.status.id == msg.status.goal_id.id:
             self.active_command = None
 
     def interrupt(self, msg=None):
         if self.active_command:
             status = self.active_command.status
-            self.cancel_pub.publish(GoalID())
+            # self.cancel_pub.publish(GoalID())
             rospy.logdebug("Interrupted Action:\n%s" % status.id)
             rospy.logdebug("Interrupted Time: %s" %
                            status.feedback.actual.time_from_start.to_sec())
             return status
+        return None
 
 
 class MonitorAllControllers(object):
@@ -78,9 +83,12 @@ class MonitorAllControllers(object):
             ns + '/interrupt', InterruptController, self.interrupt_all)
 
     def interrupt_all(self, req):
-        res = InterruptControllerResult()
+        res = InterruptControllerResponse()
         for c in self.controllers:
-            res.status.append(c.interrupt())
+            status = c.interrupt()
+            if status:
+                res.status.append(status)
+        return res
 
 
 def main():
