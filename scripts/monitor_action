@@ -53,12 +53,12 @@ class MonitorController(object):
 
     def _feedback_cb(self, msg):
         ac = self.active_command
-        if ac and ac.status.id == msg.status.goal_id.id:
+        if ac and ac.status.id.id == msg.status.goal_id.id:
             self.active_command.update(msg)
 
     def _result_cb(self, msg):
         ac = self.active_command
-        if ac and ac.status.id == msg.status.goal_id.id:
+        if ac and ac.status.id.id == msg.status.goal_id.id:
             self.active_command = None
 
     def interrupt(self, msg=None):
