@@ -99,7 +99,7 @@ def main():
     p.add_argument("--namespace", "-ns", default='fullbody_controller',
                    help="interrupt service namespace")
     p.add_argument("--log-level", "-l", choices=LOG_LEVELS.keys(),
-                   default="debug", help="Log level")
+                   default="info", help="Log level")
     args = p.parse_args()
 
     log_level = LOG_LEVELS[args.log_level]
