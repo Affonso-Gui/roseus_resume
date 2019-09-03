@@ -70,7 +70,7 @@
            ;; Ensure last waypoint
            (unless (send goal :trajectory :points)
              (send last-point :time_from_start tm)
-             (send goal :trajectory :points (list (last-point))))
+             (send goal :trajectory :points (list last-point)))
 
            ;; Shift based on time_from_start
            (send goal :trajectory :points
