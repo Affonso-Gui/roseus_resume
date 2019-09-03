@@ -2,7 +2,7 @@
 
 ;; define callback
 (defmacro generate-sigint-handler-with-controller-interrupt (robot-interface service-name)
-  `(progn ;;compile
+  `(compile
      (defun sigint-handler-with-controller-interrupt (c)
        (let ((status (ros::service-call
                       ,service-name
