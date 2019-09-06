@@ -1,14 +1,14 @@
 (ros::load-ros-manifest "action_interrupt")
 
 ;; define callback
-(defmacro generate-sigint-handler-with-controller-interrupt (robot-interface service-name)
+(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
   `(compile
-     (defun sigint-handler-with-controller-interrupt (c)
+     (defun interruption-handler-with-controller-interrupt (c)
        (let ((status (ros::service-call
                       ,service-name
                       (instance action_interrupt::InterruptControllerRequest :init))))
          (send ,robot-interface :interrupt-angle-vector)
-         (sigint-handler c)
+         (lisp::interruption-handler c)
          (send ,robot-interface :resume-angle-vector status)))))
 
 ;; install callback
@@ -29,13 +29,14 @@
             (format s " &"))))
 
        ;; generate & install interruption handler
-       (generate-sigint-handler-with-controller-interrupt ,robot-interface ,service-name)
-       (install-handler unix::sigint-received 'sigint-handler-with-controller-interrupt))))
+       (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
+       (install-handler interruption-event 'interruption-handler-with-controller-interrupt))))
 
 (defmethod robot-interface
  (:interrupt-angle-vector ()
   (send self :cancel-angle-vector))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
+   (unless (send status :status) (return-from :resume-angle-vector nil))
    (let ((offset 0.0))
      (labels
          ((offset-point (point tm)
