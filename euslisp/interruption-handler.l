@@ -1,15 +1,20 @@
 (ros::load-ros-manifest "action_interrupt")
 
+;; interrupt conditions
+(defcondition before-interruption-event :slots (status) :super interruption-event)
+(defcondition during-interruption-event :super interruption-event)
+(defcondition after-interruption-event :slots (status) :super interruption-event)
+
 ;; define callback
-(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
+(defmacro generate-interruption-handler-with-controller-interrupt (service-name)
   `(compile
-     (defun interruption-handler-with-controller-interrupt (c)
-       (let ((status (ros::service-call
-                      ,service-name
-                      (instance action_interrupt::InterruptControllerRequest :init))))
-         (send ,robot-interface :interrupt-angle-vector)
-         (lisp::interruption-handler c)
-         (send ,robot-interface :resume-angle-vector status)))))
+    (defun interruption-handler-with-controller-interrupt (c)
+      (let ((action-status
+             (ros::service-call ,service-name
+              (instance action_interrupt::InterruptControllerRequest :init))))
+        (signals before-interruption-event :status action-status)
+        (signals during-interruption-event :msg "keyboard interrupt")
+        (signals after-interruption-event :status action-status)))))
 
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
@@ -28,9 +33,15 @@
               (format s " -c ~A" (send ca :name)))
             (format s " &"))))
 
-       ;; generate & install interruption handler
-       (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
-       (install-handler interruption-event 'interruption-handler-with-controller-interrupt))))
+       ;; generate & install interruption handlers
+       (generate-interruption-handler-with-controller-interrupt ,service-name)
+       (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
+       (install-handler before-interruption-event
+         #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
+       (install-handler during-interruption-event
+         #'(lambda (c) (lisp::interruption-handler c)))
+       (install-handler after-interruption-event
+         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
 
 (defmethod robot-interface
  (:interrupt-angle-vector ()
@@ -112,5 +123,3 @@
 
        ;; Wait offset before resuming
        (unix:usleep (truncate (* offset 1000000)))))))
-
-       
