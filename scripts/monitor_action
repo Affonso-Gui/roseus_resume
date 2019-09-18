@@ -9,15 +9,6 @@ from control_msgs.msg import FollowJointTrajectoryAction
 import rospy
 
 
-LOG_LEVELS = {
-    "debug": rospy.DEBUG,
-    "info": rospy.INFO,
-    "warn": rospy.WARN,
-    "error": rospy.ERROR,
-    "fatal": rospy.FATAL,
-}
-
-
 class ActionStatus(object):
     def __init__(self, name, goal_msg):
         self.status = InterruptActionStatus(name=name,
@@ -98,15 +89,15 @@ def main():
                    help="motor controllers")
     p.add_argument("--namespace", "-ns", default='fullbody_controller',
                    help="interrupt service namespace")
-    p.add_argument("--log-level", "-l", choices=LOG_LEVELS.keys(),
-                   default="info", help="Log level")
     args = p.parse_args()
 
-    log_level = LOG_LEVELS[args.log_level]
-    rospy.init_node("interrupt_server", anonymous=True, log_level=log_level)
+    rospy.init_node("interrupt_server", disable_signals=True)
     MonitorAllControllers(args.namespace, *args.controller)
 
-    rospy.spin()
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        rospy.logwarn("Finished.")
 
 
 if __name__ == '__main__':

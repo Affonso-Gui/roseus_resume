@@ -32,7 +32,8 @@ class StopSubscriber(object):
                 return
 
     def spin(self):
-        while True:
+        while not rospy.is_shutdown():
+            rospy.sleep(1)
             try:
                 os.kill(self.pid, 0)
             except OSError:
@@ -46,7 +47,7 @@ def main():
     p.add_argument("pid", type=int, help="process id")
     args = p.parse_args()
 
-    rospy.init_node("stopper" + str(args.pid))
+    rospy.init_node("stopper" + str(args.pid), disable_signals=True)
 
     StopInstance = StopSubscriber(args.pid)
     rospy.loginfo("Monitoring pid %d..." % args.pid)
