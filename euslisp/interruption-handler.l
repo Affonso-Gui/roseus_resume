@@ -163,7 +163,7 @@
                    (symbol-pname sym)))))
       (ros::subscribe (format nil "~A/~A" namespace (ros-name name))
                       msg-type #'send self name
-                      :groupname groupname)))
+                      :groupname groupname))))
 
 (defmacro register-callable-interventions (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
