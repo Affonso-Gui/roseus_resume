@@ -11,6 +11,7 @@ from std_msgs.msg import Empty
 class StopSubscriber(object):
     def __init__(self, pid):
         self.pid = pid
+        self.rate = rospy.Rate(100)
         self.sound_sub = rospy.Subscriber('Tablet/voice', VoiceMessage,
                                           self.callback)
         self.stop_sub = rospy.Subscriber('stop', Empty, self.stop)
@@ -33,12 +34,12 @@ class StopSubscriber(object):
 
     def spin(self):
         while not rospy.is_shutdown():
-            rospy.sleep(1)
             try:
-                os.kill(self.pid, 0)
+                os.kill(self.pid, signal.SIGUSR1)
             except OSError:
                 rospy.logwarn("...Closing")
                 exit()
+            self.rate.sleep()
 
 
 def main():

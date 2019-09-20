@@ -1,5 +1,9 @@
 (ros::load-ros-manifest "action_interrupt")
 
+;;;;;;;;;;;;;;;;;
+;; INTERRUPTION
+;;;;;;;;;;;;;;;;;
+
 ;; interrupt conditions
 (defcondition before-interruption-event :slots (status) :super interruption-event)
 (defcondition during-interruption-event :super interruption-event)
@@ -123,3 +127,60 @@
 
        ;; Wait offset before resuming
        (unix:usleep (truncate (* offset 1000000)))))))
+
+
+;;;;;;;;;;;;;;;;;
+;; INTERVENTION
+;;;;;;;;;;;;;;;;;
+
+(defclass intervention :slots (namespace groupname))
+(defclass unix::sigusr1-received :super unix::signal-received)
+(unix:install-signal-handler unix::sigusr1 unix::sigusr1-received)
+
+(defmethod intervention
+  (:init (cb-alist &key ((:namespace ns) (format nil "intervention~A" (unix:getpid)))
+                   ((:groupname gn) (format nil "euslisp~A" (unix:getpid))))
+    (setq namespace ns)
+    (setq groupname gn)
+    (ros::create-nodehandle groupname)
+
+    ;; register callbacks
+    (dolist (cb cb-alist)
+      (let ((name (car cb))
+            (type (cdr cb)))
+        (send self :register-callback name type)))
+
+    ;; install signal handler
+    (install-handler unix::sigusr1-received
+      `(lambda-closure nil 0 0 (c) (ros::spin-once ,groupname) (next-handler)))
+
+    ;; return value
+    self)
+
+  (:register-callback (name msg-type)
+    (ros::subscribe (format nil "~A/~A" namespace (string-downcase (symbol-pname name)))
+                    msg-type #'send self name
+                    :groupname groupname)))
+
+(defmacro register-callable-interventions (&rest methods)
+  "(&rest (selector lambda-list msg-type &rest body))"
+  `(progn
+     (defmethod intervention
+         ,@(mapcar #'(lambda (m)
+                       (let ((selector (first m))
+                             (lambda-list (second m))
+                             ;; (msg-type (third m))
+                             (body (cdddr m)))
+                         `(,selector ,lambda-list ,@body)))
+                   methods))
+     (instance intervention :init
+               ',(mapcar #'(lambda (m)
+                             (let ((selector (first m))
+                                   (msg-type (third m)))
+                               (cons selector msg-type)))
+                         methods))))
+
+;; register default callback
+(register-callable-interventions
+  (:interrupt (msg) std_msgs::Empty
+    (signals unix::sigint-received)))
