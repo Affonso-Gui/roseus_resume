@@ -43,7 +43,7 @@
        (install-handler before-interruption-event
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
        (install-handler during-interruption-event
-         #'(lambda (c) (lisp::interruption-handler c)))
+         #'lisp::interruption-handler)
        (install-handler after-interruption-event
          #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
 
@@ -180,7 +180,7 @@
                ',(mapcar #'(lambda (m)
                              (let ((selector (first m))
                                    (msg-type (third m)))
-                               (cons selector msg-type)))
+                               (cons selector (eval msg-type))))
                          methods))))
 
 ;; register default callback
