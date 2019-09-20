@@ -138,10 +138,9 @@
 (unix:install-signal-handler unix::sigusr1 unix::sigusr1-received)
 
 (defmethod intervention
-  (:init (cb-alist &key ((:namespace ns) (format nil "intervention~A" (unix:getpid)))
-                   ((:groupname gn) (format nil "euslisp~A" (unix:getpid))))
+  (:init (cb-alist &key ((:namespace ns) (format nil "intervention~A" (unix:getpid))))
     (setq namespace ns)
-    (setq groupname gn)
+    (setq groupname (format nil "euslisp_~A_~A" (unix:getpid) (random 100000000)))
     (ros::create-nodehandle groupname)
 
     ;; register callbacks
@@ -158,9 +157,13 @@
     self)
 
   (:register-callback (name msg-type)
-    (ros::subscribe (format nil "~A/~A" namespace (string-downcase (symbol-pname name)))
-                    msg-type #'send self name
-                    :groupname groupname)))
+    (flet ((ros-name (sym)
+             (string-downcase
+              (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
+                   (symbol-pname sym)))))
+      (ros::subscribe (format nil "~A/~A" namespace (ros-name name))
+                      msg-type #'send self name
+                      :groupname groupname)))
 
 (defmacro register-callable-interventions (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
