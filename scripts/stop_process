@@ -11,11 +11,14 @@ from std_msgs.msg import Empty
 class StopSubscriber(object):
     def __init__(self, pid):
         self.pid = pid
+        self.ns = 'intervention_{}'.format(self.pid)
         self.rate = rospy.Rate(100)
         self.sound_sub = rospy.Subscriber('Tablet/voice', VoiceMessage,
                                           self.callback)
-        self.stop_sub = rospy.Subscriber('stop', Empty, self.stop)
-        self.resume_sub = rospy.Subscriber('resume', Empty, self.resume)
+        self.stop_sub = rospy.Subscriber(self.ns + '/interrupt',
+                                         Empty, self.stop)
+        self.resume_sub = rospy.Subscriber(self.ns + '/resume',
+                                           Empty, self.resume)
 
     def stop(self, msg=None):
         os.kill(self.pid, signal.SIGINT)

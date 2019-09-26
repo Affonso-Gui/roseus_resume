@@ -134,13 +134,13 @@
 ;;;;;;;;;;;;;;;;;
 
 (defclass intervention :slots (namespace groupname))
-(defclass unix::sigusr1-received :super unix::signal-received)
-(unix:install-signal-handler unix::sigusr1 unix::sigusr1-received)
+(defun ros::spin-sigusr1 (sig code) (ros::spin-once "intervention"))
+(unix:signal unix::sigusr1 'ros::spin-sigusr1)
 
 (defmethod intervention
-  (:init (cb-alist &key ((:namespace ns) (format nil "intervention~A" (unix:getpid))))
+  (:init (cb-alist &key ((:namespace ns) (format nil "intervention_~A" (unix:getpid))))
     (setq namespace ns)
-    (setq groupname (format nil "euslisp_~A_~A" (unix:getpid) (random 100000000)))
+    (setq groupname "intervention")
     (ros::create-nodehandle groupname)
 
     ;; register callbacks
@@ -148,10 +148,6 @@
       (let ((name (car cb))
             (type (cdr cb)))
         (send self :register-callback name type)))
-
-    ;; install signal handler
-    (install-handler unix::sigusr1-received
-      `(lambda-closure nil 0 0 (c) (ros::spin-once ,groupname) (next-handler)))
 
     ;; return value
     self)
@@ -182,8 +178,3 @@
                                    (msg-type (third m)))
                                (cons selector (eval msg-type))))
                          methods))))
-
-;; register default callback
-(register-callable-interventions
-  (:interrupt (msg) std_msgs::Empty
-    (signals unix::sigint-received)))
