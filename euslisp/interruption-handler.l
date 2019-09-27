@@ -106,26 +106,30 @@
 (defcondition on-resume :slots (status) :super interruption-event)
 
 ;; define callback
-(defmacro generate-interruption-handler-with-controller-interrupt (service-name)
+(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
   ;; compile handler to keep the top-level env during the interruption repl
-  `(compile
-    (defun interruption-handler-with-controller-interrupt (c)
-      (let ((action-status
-             (ros::service-call ,service-name
-              (instance roseus_resume::GetControllerActionStatusRequest :init))))
-        (signals on-interruption :status action-status)
-        (signals on-standby :msg "keyboard interrupt" :status action-status)
-        (signals on-resume :status action-status)))))
+  `(progn
+     (defmethod robot-interface
+       (:get-action-status ()
+        (ros::service-call ,service-name
+          (instance roseus_resume::GetControllerActionStatusRequest :init))))
+     (compile
+      (defun interruption-handler-with-controller-interrupt (c)
+        (let ((action-status (send ,robot-interface :get-action-status)))
+          (signals on-interruption :status action-status)
+          (signals on-standby :msg "keyboard interrupt" :status action-status)
+          (signals on-resume :status action-status))))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
+(defmacro install-interruption-handler (robot-interface &key (namespace "fullbody_controller"))
   (let ((service-name (format nil "~A/get_status" namespace)))
     `(progn
        ;; set interruption signals
        (unix:system ,(format nil "rosrun roseus_resume stop_process ~A &" (unix:getpid)))
 
        ;; monitor controllers state
-       (unless (ros::service-exists ,service-name)
+       (unless (or (ros::service-exists ,service-name)
+                   (send ,robot-interface :simulation-modep))
          (unix:system
           (with-output-to-string (s)
             (format s "rosrun roseus_resume monitor_controller")
@@ -135,7 +139,7 @@
             (format s " &"))))
 
        ;; generate & install interruption handlers
-       (generate-interruption-handler-with-controller-interrupt ,service-name)
+       (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
        (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
        (install-handler on-interruption
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
