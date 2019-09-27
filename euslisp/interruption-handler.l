@@ -1,4 +1,4 @@
-(ros::load-ros-manifest "action_interrupt")
+(ros::load-ros-manifest "roseus_resume")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CONTROLLER INTERFACE
@@ -90,10 +90,10 @@
 ;; PACKAGE DEFINITION
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-(unless (find-package "INTERRUPTION") (make-package "INTERRUPTION"))
-(in-package "INTERRUPTION")
-(export '(before-interruption-event during-interruption-event after-interruption-event
-          install-interruption-handler register-callable-interventions))
+(unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
+(in-package "ROSEUS_RESUME")
+(export '(on-interruption on-standby on-resume
+          install-interruption-handler register-callable-intervention))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -101,9 +101,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; conditions
-(defcondition before-interruption-event :slots (status) :super interruption-event)
-(defcondition during-interruption-event :super interruption-event)
-(defcondition after-interruption-event :slots (status) :super interruption-event)
+(defcondition on-interruption :slots (status) :super interruption-event)
+(defcondition on-standby :slots (status) :super interruption-event)
+(defcondition on-resume :slots (status) :super interruption-event)
 
 ;; define callback
 (defmacro generate-interruption-handler-with-controller-interrupt (service-name)
@@ -112,36 +112,36 @@
     (defun interruption-handler-with-controller-interrupt (c)
       (let ((action-status
              (ros::service-call ,service-name
-              (instance action_interrupt::GetControllerActionStatusRequest :init))))
-        (signals before-interruption-event :status action-status)
-        (signals during-interruption-event :msg "keyboard interrupt")
-        (signals after-interruption-event :status action-status)))))
+              (instance roseus_resume::GetControllerActionStatusRequest :init))))
+        (signals on-interruption :status action-status)
+        (signals on-standby :msg "keyboard interrupt" :status action-status)
+        (signals on-resume :status action-status)))))
 
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
   (let ((service-name (format nil "~A/get_status" namespace)))
     `(progn
        ;; set interruption signals
-       (unix:system ,(format nil "rosrun action_interrupt stop_process ~A &" (unix:getpid)))
+       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A &" (unix:getpid)))
 
        ;; monitor controllers state
        (unless (ros::service-exists ,service-name)
          (unix:system
           (with-output-to-string (s)
-            (format s "rosrun action_interrupt monitor_action")
+            (format s "rosrun roseus_resume monitor_controller")
             (format s " --namespace ~A" ,namespace)
-            (dolist (ca (send ,robot-interface :get-val 'controller-actions))
+            (dolist (ca (send ,robot-interface :get-val "CONTROLLER-ACTIONS"))
               (format s " -c ~A" (send ca :name)))
             (format s " &"))))
 
        ;; generate & install interruption handlers
        (generate-interruption-handler-with-controller-interrupt ,service-name)
        (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
-       (install-handler before-interruption-event
+       (install-handler on-interruption
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
-       (install-handler during-interruption-event
+       (install-handler on-standby
          #'lisp::interruption-handler)
-       (install-handler after-interruption-event
+       (install-handler on-resume
          #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
 
 
@@ -177,7 +177,7 @@
                       msg-type #'send self name
                       :groupname *intervention-groupname*))))
 
-(defmacro register-callable-interventions (&rest methods)
+(defmacro register-callable-intervention (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
   `(progn
      (defmethod intervention
@@ -194,6 +194,3 @@
                                    (msg-type (third m)))
                                (cons selector (eval msg-type))))
                          methods))))
-
-;; use package
-(send *user-package* :use "INTERRUPTION")
