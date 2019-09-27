@@ -119,7 +119,7 @@
 
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
-  (let ((service-name (format nil "~A/interrupt" namespace)))
+  (let ((service-name (format nil "~A/get_status" namespace)))
     `(progn
        ;; set interruption signals
        (unix:system ,(format nil "rosrun action_interrupt stop_process ~A &" (unix:getpid)))

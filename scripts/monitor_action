@@ -71,7 +71,7 @@ class MonitorAllControllers(object):
             ns = ns[:-1]
 
         self.interrupt_service = rospy.Service(
-            ns + '/interrupt', GetControllerActionStatus, self.interrupt_all)
+            ns + '/get_status', GetControllerActionStatus, self.interrupt_all)
 
     def interrupt_all(self, req):
         res = GetControllerActionStatusResponse()
