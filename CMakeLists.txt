@@ -6,6 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   control_msgs
   actionlib_msgs
+  jsk_gui_msgs
   message_generation
   message_runtime
 )

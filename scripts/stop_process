@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 
 import argparse
-from jsk_gui_msgs.msg import VoiceMessage
 import os
 import rospy
 import signal
@@ -13,8 +12,6 @@ class StopSubscriber(object):
         self.pid = pid
         self.ns = 'intervention_{}'.format(self.pid)
         self.rate = rospy.Rate(100)
-        self.sound_sub = rospy.Subscriber('Tablet/voice', VoiceMessage,
-                                          self.callback)
         self.stop_sub = rospy.Subscriber(self.ns + '/interrupt',
                                          Empty, self.stop)
         self.resume_sub = rospy.Subscriber(self.ns + '/resume',
@@ -25,15 +22,6 @@ class StopSubscriber(object):
 
     def resume(self, msg=None):
         os.kill(self.pid, signal.SIGCONT)
-
-    def callback(self, msg):
-        for text in msg.texts:
-            if 'stop' in text:
-                self.stop()
-                return
-            if 'continue' in text:
-                self.resume()
-                return
 
     def spin(self):
         while not rospy.is_shutdown():
