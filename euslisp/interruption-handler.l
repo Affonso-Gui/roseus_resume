@@ -1,51 +1,8 @@
 (ros::load-ros-manifest "action_interrupt")
 
-;;;;;;;;;;;;;;;;;
-;; INTERRUPTION
-;;;;;;;;;;;;;;;;;
-
-;; interrupt conditions
-(defcondition before-interruption-event :slots (status) :super interruption-event)
-(defcondition during-interruption-event :super interruption-event)
-(defcondition after-interruption-event :slots (status) :super interruption-event)
-
-;; define callback
-(defmacro generate-interruption-handler-with-controller-interrupt (service-name)
-  `(compile
-    (defun interruption-handler-with-controller-interrupt (c)
-      (let ((action-status
-             (ros::service-call ,service-name
-              (instance action_interrupt::InterruptControllerRequest :init))))
-        (signals before-interruption-event :status action-status)
-        (signals during-interruption-event :msg "keyboard interrupt")
-        (signals after-interruption-event :status action-status)))))
-
-;; install callback
-(defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
-  (let ((service-name (format nil "~A/interrupt" namespace)))
-    `(progn
-       ;; set interruption signals
-       (unix:system ,(format nil "rosrun action_interrupt stop_process ~A &" (unix:getpid)))
-
-       ;; monitor controllers state
-       (unless (ros::service-exists ,service-name)
-         (unix:system
-          (with-output-to-string (s)
-            (format s "rosrun action_interrupt monitor_action")
-            (format s " --namespace ~A" ,namespace)
-            (dolist (ca (send ,robot-interface :get-val 'controller-actions))
-              (format s " -c ~A" (send ca :name)))
-            (format s " &"))))
-
-       ;; generate & install interruption handlers
-       (generate-interruption-handler-with-controller-interrupt ,service-name)
-       (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
-       (install-handler before-interruption-event
-         #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
-       (install-handler during-interruption-event
-         #'lisp::interruption-handler)
-       (install-handler after-interruption-event
-         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CONTROLLER INTERFACE
+;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod robot-interface
  (:interrupt-angle-vector ()
@@ -129,19 +86,78 @@
        (unix:usleep (truncate (* offset 1000000)))))))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;
+;; PACKAGE DEFINITION
+;;;;;;;;;;;;;;;;;;;;;;;
+
+(unless (find-package "INTERRUPTION") (make-package "INTERRUPTION"))
+(in-package "INTERRUPTION")
+(export '(before-interruption-event during-interruption-event after-interruption-event
+          install-interruption-handler register-callable-interventions))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; INTERRUPTION HANDLERS
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; conditions
+(defcondition before-interruption-event :slots (status) :super interruption-event)
+(defcondition during-interruption-event :super interruption-event)
+(defcondition after-interruption-event :slots (status) :super interruption-event)
+
+;; define callback
+(defmacro generate-interruption-handler-with-controller-interrupt (service-name)
+  ;; compile handler to keep the top-level env during the interruption repl
+  `(compile
+    (defun interruption-handler-with-controller-interrupt (c)
+      (let ((action-status
+             (ros::service-call ,service-name
+              (instance action_interrupt::InterruptControllerRequest :init))))
+        (signals before-interruption-event :status action-status)
+        (signals during-interruption-event :msg "keyboard interrupt")
+        (signals after-interruption-event :status action-status)))))
+
+;; install callback
+(defmacro install-interruption-handler (robot-interface &optional (namespace "fullbody_controller"))
+  (let ((service-name (format nil "~A/interrupt" namespace)))
+    `(progn
+       ;; set interruption signals
+       (unix:system ,(format nil "rosrun action_interrupt stop_process ~A &" (unix:getpid)))
+
+       ;; monitor controllers state
+       (unless (ros::service-exists ,service-name)
+         (unix:system
+          (with-output-to-string (s)
+            (format s "rosrun action_interrupt monitor_action")
+            (format s " --namespace ~A" ,namespace)
+            (dolist (ca (send ,robot-interface :get-val 'controller-actions))
+              (format s " -c ~A" (send ca :name)))
+            (format s " &"))))
+
+       ;; generate & install interruption handlers
+       (generate-interruption-handler-with-controller-interrupt ,service-name)
+       (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
+       (install-handler before-interruption-event
+         #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
+       (install-handler during-interruption-event
+         #'lisp::interruption-handler)
+       (install-handler after-interruption-event
+         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
+
+
 ;;;;;;;;;;;;;;;;;
 ;; INTERVENTION
 ;;;;;;;;;;;;;;;;;
 
-(defclass intervention :slots (namespace groupname))
-(defun ros::spin-sigusr1 (sig code) (ros::spin-once "intervention"))
+(defclass intervention :slots (namespace))
+(defconstant *intervention-groupname* "intervention")
+(ros::create-nodehandle *intervention-groupname*)
+(defun ros::spin-sigusr1 (sig code) (ros::spin-once *intervention-groupname*))
 (unix:signal unix::sigusr1 'ros::spin-sigusr1)
 
 (defmethod intervention
   (:init (cb-alist &key ((:namespace ns) (format nil "intervention_~A" (unix:getpid))))
     (setq namespace ns)
-    (setq groupname "intervention")
-    (ros::create-nodehandle groupname)
 
     ;; register callbacks
     (dolist (cb cb-alist)
@@ -159,7 +175,7 @@
                    (symbol-pname sym)))))
       (ros::subscribe (format nil "~A/~A" namespace (ros-name name))
                       msg-type #'send self name
-                      :groupname groupname))))
+                      :groupname *intervention-groupname*))))
 
 (defmacro register-callable-interventions (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
@@ -178,3 +194,6 @@
                                    (msg-type (third m)))
                                (cons selector (eval msg-type))))
                          methods))))
+
+;; use package
+(send *user-package* :use "INTERRUPTION")
