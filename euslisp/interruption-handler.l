@@ -112,7 +112,7 @@
     (defun interruption-handler-with-controller-interrupt (c)
       (let ((action-status
              (ros::service-call ,service-name
-              (instance action_interrupt::InterruptControllerRequest :init))))
+              (instance action_interrupt::GetControllerActionStatusRequest :init))))
         (signals before-interruption-event :status action-status)
         (signals during-interruption-event :msg "keyboard interrupt")
         (signals after-interruption-event :status action-status)))))

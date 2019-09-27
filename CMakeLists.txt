@@ -11,11 +11,11 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 add_message_files(FILES
-  InterruptActionStatus.msg
+  ControllerActionStatus.msg
 )
 
 add_service_files(FILES
-  InterruptController.srv
+  GetControllerActionStatus.srv
 )
 
 generate_messages(DEPENDENCIES

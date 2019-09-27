@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 
-from action_interrupt.msg import InterruptActionStatus
-from action_interrupt.srv import InterruptController
-from action_interrupt.srv import InterruptControllerResponse
+from action_interrupt.msg import ControllerActionStatus
+from action_interrupt.srv import GetControllerActionStatus
+from action_interrupt.srv import GetControllerActionStatusResponse
 from actionlib_msgs.msg import GoalID
 import argparse
 from control_msgs.msg import FollowJointTrajectoryAction
@@ -11,9 +11,9 @@ import rospy
 
 class ActionStatus(object):
     def __init__(self, name, goal_msg):
-        self.status = InterruptActionStatus(name=name,
-                                            id=goal_msg.goal_id,
-                                            goal=goal_msg.goal)
+        self.status = ControllerActionStatus(name=name,
+                                             id=goal_msg.goal_id,
+                                             goal=goal_msg.goal)
 
     def update(self, feedback_msg):
         self.status.feedback = feedback_msg.feedback
@@ -71,10 +71,10 @@ class MonitorAllControllers(object):
             ns = ns[:-1]
 
         self.interrupt_service = rospy.Service(
-            ns + '/interrupt', InterruptController, self.interrupt_all)
+            ns + '/interrupt', GetControllerActionStatus, self.interrupt_all)
 
     def interrupt_all(self, req):
-        res = InterruptControllerResponse()
+        res = GetControllerActionStatusResponse()
         for c in self.controllers:
             status = c.interrupt()
             if status:
