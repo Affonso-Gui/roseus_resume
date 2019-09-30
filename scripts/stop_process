@@ -25,7 +25,7 @@ class StopSubscriber(object):
     def register(self, msg):
         message_type, name, _ = rostopic.get_topic_class(msg.topic)
         if not message_type:
-            rospy.error('No such topic: %s' % msg.topic)
+            rospy.logerr('No such topic: %s' % msg.topic)
             return RegisterInterventionResponse(False)
         try:
             sub = rospy.Subscriber(name, message_type, self.intervention)

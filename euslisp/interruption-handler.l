@@ -182,9 +182,14 @@
              (string-downcase
               (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
                    (symbol-pname sym)))))
-      (ros::subscribe (format nil "~A/~A" namespace (ros-name name))
-                      msg-type #'send self name
-                      :groupname *intervention-groupname*))))
+      (let ((topic-name (format nil "/~A/~A" namespace (ros-name name)))
+            (srv-name (format nil "~A/register_intervention" namespace)))
+        (ros::subscribe topic-name msg-type #'send self name
+                        :groupname *intervention-groupname*)
+        (ros::wait-for-service srv-name)
+        (ros::ros-info "Listener installed on ~S" topic-name)
+        (ros::service-call srv-name
+          (instance roseus_resume::RegisterInterventionRequest :init :topic topic-name))))))
 
 (defmacro register-callable-intervention (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
