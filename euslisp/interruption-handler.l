@@ -161,7 +161,7 @@
 (defclass intervention :slots (namespace))
 (defconstant *intervention-groupname* "intervention")
 (ros::create-nodehandle *intervention-groupname*)
-(defun ros::spin-sigusr1 (sig code) (ros::spin-once *intervention-groupname*))
+(defun ros::spin-sigusr1 (sig code) (ros::wait-for-message 0.5 *intervention-groupname*))
 (unix:signal unix::sigusr1 'ros::spin-sigusr1)
 
 (defmethod intervention

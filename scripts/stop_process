@@ -3,19 +3,40 @@
 import argparse
 import os
 import rospy
+import rostopic
 import signal
+import traceback
 from std_msgs.msg import Empty
-
+from roseus_resume.srv import RegisterIntervention, RegisterInterventionResponse
 
 class StopSubscriber(object):
     def __init__(self, pid):
         self.pid = pid
         self.ns = 'intervention_{}'.format(self.pid)
-        self.rate = rospy.Rate(100)
+        self.interventions = []
+        self.rate = rospy.Rate(10)
         self.stop_sub = rospy.Subscriber(self.ns + '/interrupt',
                                          Empty, self.stop)
         self.resume_sub = rospy.Subscriber(self.ns + '/resume',
                                            Empty, self.resume)
+        self.register_srv = rospy.Service(self.ns + '/register_intervention',
+                                          RegisterIntervention, self.register)
+
+    def register(self, msg):
+        message_type, name, _ = rostopic.get_topic_class(msg.topic)
+        if not message_type:
+            rospy.error('No such topic: %s' % msg.topic)
+            return RegisterInterventionResponse(False)
+        try:
+            sub = rospy.Subscriber(name, message_type, self.intervention)
+            self.interventions.append(sub)
+            return RegisterInterventionResponse(True)
+        except Exception:
+            traceback.print_exc()
+            return RegisterInterventionResponse(False)
+
+    def intervention(self, msg=None):
+        os.kill(self.pid, signal.SIGUSR1)
 
     def stop(self, msg=None):
         os.kill(self.pid, signal.SIGINT)
@@ -26,7 +47,7 @@ class StopSubscriber(object):
     def spin(self):
         while not rospy.is_shutdown():
             try:
-                os.kill(self.pid, signal.SIGUSR1)
+                os.kill(self.pid, 0)
             except OSError:
                 rospy.logwarn("...Closing")
                 exit()

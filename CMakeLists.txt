@@ -17,6 +17,7 @@ add_message_files(FILES
 
 add_service_files(FILES
   GetControllerActionStatus.srv
+  RegisterIntervention.srv
 )
 
 generate_messages(DEPENDENCIES
