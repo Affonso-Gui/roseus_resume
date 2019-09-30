@@ -1,17 +1,6 @@
 (ros::load-ros-manifest "roseus_resume")
 
 
-;;;;;;;;;;;;;;;;;;;;;;;
-;; PACKAGE DEFINITION
-;;;;;;;;;;;;;;;;;;;;;;;
-
-(unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
-(import 'robot-interface (find-package "ROSEUS_RESUME"))
-(in-package "ROSEUS_RESUME")
-(export '(on-interruption on-standby on-resume
-          install-interruption-handler register-callable-intervention))
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CONTROLLER INTERFACE
 ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -99,6 +88,17 @@
 
        ;; Wait offset before resuming
        (unix:usleep (truncate (* offset 1000000)))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;; PACKAGE DEFINITION
+;;;;;;;;;;;;;;;;;;;;;;;
+
+(unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
+(import 'robot-interface (find-package "ROSEUS_RESUME"))
+(in-package "ROSEUS_RESUME")
+(export '(on-interruption on-standby on-resume
+          install-interruption-handler register-callable-intervention))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
