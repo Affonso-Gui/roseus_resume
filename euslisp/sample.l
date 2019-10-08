@@ -9,10 +9,6 @@
 (roseus_resume:install-interruption-handler *ri*)
 
 
-;; Overwrite default interruption behavior by method
-;; (defmethod pr2-interface
-;;   (:interrupt-angle-vector ()
-;;    (send self :stop-motion)))
 ;; Overwrite default interruption behavior by signal
 (install-handler roseus_resume:on-interruption #'(lambda (c) (send *ri* :stop-motion)))
 
@@ -27,9 +23,9 @@
      (send *ri* :stop-motion)
      (send *ri* :speak (send msg :data) :wait t)
      (send *ri* :resume-angle-vector action-status)))
- (:stop-speak2 (msg) std_msgs::String
+ (:welcome (msg) std_msgs::Empty
    (handler-bind ((interruption:on-standby
-                   `(lambda-closure 0 0 nil (c) (send *ri* :speak ,(send msg :data) :wait t))))
+                   #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
      (signals interruption-event))))
 
 

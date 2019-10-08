@@ -97,8 +97,8 @@
 (unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
-(export '(on-interruption on-standby on-resume
-          install-interruption-handler register-callable-intervention))
+(export '(on-interruption on-standby on-resume install-interruption-handler
+          intervention defintervention register-callable-intervention))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -158,43 +158,54 @@
 ;; INTERVENTION
 ;;;;;;;;;;;;;;;;;
 
-(defclass intervention :slots (namespace))
+(defcondition intervention :slots (request))
 (defconstant *intervention-groupname* "intervention")
 (ros::create-nodehandle *intervention-groupname*)
 (defun ros::spin-sigusr1 (sig code) (ros::wait-for-message 0.5 *intervention-groupname*))
 (unix:signal unix::sigusr1 'ros::spin-sigusr1)
 
-(defmethod intervention
-  (:init (cb-alist &key ((:namespace ns) (format nil "intervention_~A" (unix:getpid))))
-    (setq namespace ns)
+(defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
+  (flet ((ros-name (sym)
+           (string-downcase
+            (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
+                 (symbol-pname sym)))))
+    (let ((topic-name (or topic-name (format nil "/intervention/~A" (ros-name name))))
+          (srv-name (format nil "intervention_~A/register_intervention" (unix:getpid))))
+      `(progn
+         (unless (boundp ',name)
+           (defcondition ,name :super intervention))
+         (ros::subscribe ,topic-name ,message-type
+                         #'(lambda (msg) (signals ,name :request msg))
+                         :groupname *intervention-groupname*)
+         (ros::wait-for-service ,srv-name)
+         (ros::ros-info ,(format nil "Listener installed on ~S" topic-name))
+         (ros::service-call ,srv-name
+                            (instance roseus_resume::RegisterInterventionRequest :init :topic ,topic-name))))))
 
-    ;; register callbacks
-    (dolist (cb cb-alist)
-      (let ((name (car cb))
-            (type (cdr cb)))
-        (send self :register-callback name type)))
 
-    ;; return value
-    self)
+;; Utility to define and organize multiple callback definitions
 
-  (:register-callback (name msg-type)
-    (flet ((ros-name (sym)
-             (string-downcase
-              (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
-                   (symbol-pname sym)))))
-      (let ((topic-name (format nil "/~A/~A" namespace (ros-name name)))
-            (srv-name (format nil "~A/register_intervention" namespace)))
-        (ros::subscribe topic-name msg-type #'send self name
-                        :groupname *intervention-groupname*)
-        (ros::wait-for-service srv-name)
-        (ros::ros-info "Listener installed on ~S" topic-name)
-        (ros::service-call srv-name
-          (instance roseus_resume::RegisterInterventionRequest :init :topic topic-name))))))
+(defclass intervention-callback)
+(defmethod intervention-callback
+  (:register-callbacks (&rest cbs)
+    (dolist (cb cbs)
+      (eval
+       `(install-handler
+         ,(intern (symbol-pname cb) "ROSEUS_RESUME")
+         ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :request))))))))
 
 (defmacro register-callable-intervention (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
   `(progn
-     (defmethod intervention
+     ;; define interventions
+     ,@(mapcar #'(lambda (m)
+                   (let ((selector (first m))
+                         (msg-type (third m)))
+                     `(defintervention ,(intern (symbol-pname selector) "ROSEUS_RESUME")
+                          :message-type ,msg-type)))
+               methods)
+     ;; define callback methods
+     (defmethod intervention-callback
          ,@(mapcar #'(lambda (m)
                        (let ((selector (first m))
                              (lambda-list (second m))
@@ -202,9 +213,5 @@
                              (body (cdddr m)))
                          `(,selector ,lambda-list ,@body)))
                    methods))
-     (instance intervention :init
-               ',(mapcar #'(lambda (m)
-                             (let ((selector (first m))
-                                   (msg-type (third m)))
-                               (cons selector (eval msg-type))))
-                         methods))))
+     ;; initialize instance
+     (instance intervention-callback :register-callbacks ,@(mapcar #'first methods))))
