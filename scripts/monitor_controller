@@ -87,7 +87,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--controller", "-c", action='append',
                    help="motor controllers")
-    p.add_argument("--namespace", "-ns", default='fullbody_controller',
+    p.add_argument("--namespace", "-ns", default='roseus_resume',
                    help="interrupt service namespace")
     args = p.parse_args()
 

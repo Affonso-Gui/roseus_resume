@@ -126,11 +126,12 @@
           (signals on-resume :status action-status))))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface &key (namespace "fullbody_controller"))
-  (let ((service-name (format nil "~A/get_status" namespace)))
+(defmacro install-interruption-handler (robot-interface &key (namespace "roseus_resume"))
+  (let ((service-name "/roseus_resume/get_status"))
     `(progn
        ;; set interruption signals
-       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A &" (unix:getpid)))
+       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A -ns ~A ~&"
+                             (unix:getpid) namespace))
 
        ;; monitor controllers state
        (unless (or (ros::service-exists ,service-name)
@@ -138,7 +139,6 @@
          (unix:system
           (with-output-to-string (s)
             (format s "rosrun roseus_resume monitor_controller")
-            (format s " --namespace ~A" ,namespace)
             (dolist (ca (send ,robot-interface :get-val "CONTROLLER-ACTIONS"))
               (format s " -c ~A" (send ca :name)))
             (format s " &"))))
@@ -169,8 +169,8 @@
            (string-downcase
             (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
                  (symbol-pname sym)))))
-    (let ((topic-name (or topic-name (format nil "/intervention/~A" (ros-name name))))
-          (srv-name (format nil "intervention_~A/register_intervention" (unix:getpid))))
+    (let ((topic-name (or topic-name (format nil "/roseus_resume/~A" (ros-name name))))
+          (srv-name "/roseus_resume/register_intervention"))
       `(progn
          (unless (boundp ',name)
            (defcondition ,name :super intervention))

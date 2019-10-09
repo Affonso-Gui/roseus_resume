@@ -10,16 +10,17 @@ from std_msgs.msg import Empty
 from roseus_resume.srv import RegisterIntervention, RegisterInterventionResponse
 
 class StopSubscriber(object):
-    def __init__(self, pid):
+    def __init__(self, pid, ns):
         self.pid = pid
-        self.ns = 'intervention_{}'.format(self.pid)
+        self.ns = ns
         self.interventions = []
         self.rate = rospy.Rate(10)
         self.stop_sub = rospy.Subscriber(self.ns + '/interrupt',
                                          Empty, self.stop)
         self.resume_sub = rospy.Subscriber(self.ns + '/resume',
                                            Empty, self.resume)
-        self.register_srv = rospy.Service(self.ns + '/register_intervention',
+        # Use fixed namespace for 'register_intervention' service
+        self.register_srv = rospy.Service('roseus_resume/register_intervention',
                                           RegisterIntervention, self.register)
 
     def register(self, msg):
@@ -59,11 +60,13 @@ def main():
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("pid", type=int, help="process id")
+    p.add_argument("--namespace", "-ns", type=str, help="ROS namespace",
+                   default="intervention")
     args = p.parse_args()
 
     rospy.init_node("stopper" + str(args.pid), disable_signals=True)
 
-    StopInstance = StopSubscriber(args.pid)
+    StopInstance = StopSubscriber(args.pid, args.namespace)
     rospy.loginfo("Monitoring pid %d..." % args.pid)
     StopInstance.spin()
 
