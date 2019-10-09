@@ -6,16 +6,42 @@
 
 ;; Load interruption interface
 (load "package://roseus_resume/euslisp/interruption-handler.l")
+;; (setq roseus_resume:*namespace* "intervention")
 (roseus_resume:install-interruption-handler *ri*)
 
+#||
+Installing the interruption handler overwrites sigint (C-c) behavior
+to send the following three signals:
 
-;; Overwrite default interruption behavior by signal
+- `roseus_resume:on_interruption'
+    default_callback: (send *ri* :interrupt-angle-vector)
+- `roseus_resume:on_standby'
+    default_callback: creates a new REPL
+- `roseus_resume:on_resume'
+    default_callback: (send *ri* :resume-angle-vector)
+
+It also subscribes the ROS topics `/roseus_resume/interrupt' and `/roseus_resume/resume',
+which send sigint and sigcont to the EusLisp process.
+||#
+
+
+;; Overwrite default interruption behavior
 (install-handler roseus_resume:on-interruption #'(lambda (c) (send *ri* :stop-motion)))
 
+;; Locally overwrite interruption behaviors
+(defun demo ()
+  (handler-case
+      (prog1
+        (send *ri* :angle-vector (send *pr2* :reset-pose) 7000)
+        (send *ri* :wait-interpolation))
+    (roseus_resume:on-standby () (ros::warn "Aborted demo function!"))))
 
-;; Register custom intervention behaviors
+
+;; Register custom interventions
 (roseus_resume:register-callable-intervention
- ;; Creates a topic named `/intervention_<PID>/speak' of type `std_msgs/String'
+ ;; Creates a topic named `/roseus_resume/speak' of type `std_msgs/String',
+ ;; which signalizes an intervention condition `roseus_resume::speak' when published
+ ;; and triggers the handler function (send *ri* :speak (send msg :data))
  (:speak (msg) std_msgs::String
    (send *ri* :speak (send msg :data)))
  (:stop-speak (msg) std_msgs::String
@@ -27,14 +53,3 @@
    (handler-bind ((roseus_resume:on-standby
                    #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
      (signals interruption-event))))
-
-
-;; Define temporary behaviors
-(defun demo ()
-  (handler-case
-      (send *ri* :angle-vector
-            (if (< (norm (v- (send *ri* :state :potentio-vector) (send *pr2* :reset-pose))) 100.0)
-                (send *pr2* :init-pose)
-                (send *pr2* :reset-pose))
-            7000)
-    (roseus_resume:on-standby () (ros::warn "Aborted demo function!"))))
