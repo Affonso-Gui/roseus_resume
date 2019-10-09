@@ -24,7 +24,7 @@
      (send *ri* :speak (send msg :data) :wait t)
      (send *ri* :resume-angle-vector action-status)))
  (:welcome (msg) std_msgs::Empty
-   (handler-bind ((interruption:on-standby
+   (handler-bind ((roseus_resume:on-standby
                    #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
      (signals interruption-event))))
 

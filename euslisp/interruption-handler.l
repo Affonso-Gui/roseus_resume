@@ -122,15 +122,15 @@
       (defun interruption-handler-with-controller-interrupt (c)
         (let ((action-status (send ,robot-interface :get-action-status)))
           (signals on-interruption :status action-status)
-          (signals on-standby :msg "keyboard interrupt" :status action-status)
+          (signals on-standby :message "keyboard interrupt" :status action-status)
           (signals on-resume :status action-status))))))
 
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &key (namespace "roseus_resume"))
-  (let ((service-name "/roseus_resume/get_status"))
+  (let ((service-name "/roseus_resume/get_controller_status"))
     `(progn
        ;; set interruption signals
-       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A -ns ~A ~&"
+       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A -ns ~A &"
                              (unix:getpid) namespace))
 
        ;; monitor controllers state
