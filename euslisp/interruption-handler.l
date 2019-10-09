@@ -1,5 +1,3 @@
-(ros::load-ros-manifest "roseus_resume")
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CONTROLLER INTERFACE
@@ -95,6 +93,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;
 
 (unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
+(ros::load-ros-manifest "roseus_resume")
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
@@ -190,12 +189,15 @@
 
 (defclass intervention-callback)
 (defmethod intervention-callback
-  (:register-callbacks (&rest cbs)
+  (:init (&rest cbs)
     (dolist (cb cbs)
-      (eval
-       `(install-handler
-         ,(intern (symbol-pname cb) "ROSEUS_RESUME")
-         ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :request))))))))
+      (send self :register-callback cb))
+    self)
+  (:register-callback (cb)
+    (eval
+     `(install-handler
+       ,(intern (symbol-pname cb) "ROSEUS_RESUME")
+       ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :request))))))))
 
 (defmacro register-callable-intervention (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
@@ -217,4 +219,4 @@
                          `(,selector ,lambda-list ,@body)))
                    methods))
      ;; initialize instance
-     (instance intervention-callback :register-callbacks ,@(mapcar #'first methods))))
+     (instance intervention-callback :init ,@(mapcar #'first methods))))

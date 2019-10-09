@@ -6,21 +6,23 @@
 (export '(register-speech-intervention unregister-speech-intervention))
 
 (defparameter *speech-intervention-alist*
-  '(("stop" . #'(lambda () (signals interruption-event)))
-    ("continue" . #'(lambda () (reset *replevel*)))))
+  '(("stop" . (lambda-closure nil 0 0 nil (signals interruption-event)))
+    ("continue" . (lambda-closure nil 0 0 nil (reset *replevel*)))))
 
-(defun speech-recognition-callback (msg)
-  (dolist (txt (send msg :texts))
+(defun speech-recognition-callback (texts)
+  (dolist (txt texts)
     (let ((match (assoc txt *speech-intervention-alist* :test #'string-equal)))
       (if match (funcall (cdr match))))))
 
-(ros::subscribe "Tablet/voice" jsk_gui_msgs::VoiceMessage
-                #'speech-recognition-callback
-                :groupname *intervention-groupname*)
+(defintervention speech-recognition-intervention 
+    :topic-name "Tablet/voice"
+    :message-type jsk_gui_msgs::VoiceMessage)
+(install-handler speech-recognition-intervention 
+  '(lambda-closure nil 0 0 (c) (speech-recognition-callback (send (send c :request) :texts))))
 
 (defmacro register-speech-intervention (word &rest body)
   `(setq *speech-intervention-alist*
-         (acons word #'(lambda () ,@body) *speech-intervention-alist*)))
+         (acons ,word #'(lambda () ,@body) *speech-intervention-alist*)))
 
 (defun unregister-speech-intervention (word)
   (setq *speech-intervention-alist*

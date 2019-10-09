@@ -38,18 +38,24 @@ which send sigint and sigcont to the EusLisp process.
 
 
 ;; Register custom interventions
-(roseus_resume:register-callable-intervention
- ;; Creates a topic named `/roseus_resume/speak' of type `std_msgs/String',
- ;; which signalizes an intervention condition `roseus_resume::speak' when published
- ;; and triggers the handler function (send *ri* :speak (send msg :data))
- (:speak (msg) std_msgs::String
-   (send *ri* :speak (send msg :data)))
- (:stop-speak (msg) std_msgs::String
-   (let ((action-status (send *ri* :get-action-status)))
-     (send *ri* :stop-motion)
-     (send *ri* :speak (send msg :data) :wait t)
-     (send *ri* :resume-angle-vector action-status)))
- (:welcome (msg) std_msgs::Empty
-   (handler-bind ((roseus_resume:on-standby
-                   #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
-     (signals interruption-event))))
+(defparameter intervention-instance
+  (roseus_resume:register-callable-intervention
+   ;; Creates a topic named `/roseus_resume/speak' of type `std_msgs/String',
+   ;; which signalizes an intervention condition `roseus_resume::speak' when published
+   ;; and triggers the handler function (send *ri* :speak (send msg :data))
+   (:speak (msg) std_msgs::String
+     (send *ri* :speak (send msg :data)))
+   (:stop-speak (msg) std_msgs::String
+     (let ((action-status (send *ri* :get-action-status)))
+       (send *ri* :stop-motion)
+       (send *ri* :speak (send msg :data) :wait t)
+       (send *ri* :resume-angle-vector action-status)))
+   (:welcome (&optional msg) std_msgs::Empty
+     (handler-bind ((roseus_resume:on-standby
+                     #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
+       (signals interruption-event)))))
+
+;; Register speech recognition interventions
+(load "package://roseus_resume/euslisp/speech-recognition-intervention.l")
+(roseus_resume:register-speech-intervention "hello"
+  (send intervention-instance :welcome))
