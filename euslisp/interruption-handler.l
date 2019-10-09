@@ -98,12 +98,15 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          intervention defintervention register-callable-intervention))
+          intervention defintervention register-callable-intervention
+          *namespace*))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; INTERRUPTION HANDLERS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar *namespace* "roseus_resume")
 
 ;; conditions
 (defcondition on-interruption :slots (status) :super interruption-event)
@@ -126,7 +129,7 @@
           (signals on-resume :status action-status))))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface &key (namespace "roseus_resume"))
+(defmacro install-interruption-handler (robot-interface &key (namespace *namespace*))
   (let ((service-name "/roseus_resume/get_controller_status"))
     `(progn
        ;; set interruption signals
@@ -169,7 +172,7 @@
            (string-downcase
             (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
                  (symbol-pname sym)))))
-    (let ((topic-name (or topic-name (format nil "/roseus_resume/~A" (ros-name name))))
+    (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name))))
           (srv-name "/roseus_resume/register_intervention"))
       `(progn
          (unless (boundp ',name)
