@@ -53,7 +53,7 @@ which send sigint and sigcont to the EusLisp process.
    (:welcome (&optional msg) std_msgs::Empty
      (handler-bind ((roseus_resume:on-standby
                      #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
-       (signals interruption-event)))))
+       (signals interruption)))))
 
 ;; Register speech recognition interventions
 (load "package://roseus_resume/euslisp/speech-recognition-intervention.l")

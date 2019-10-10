@@ -108,9 +108,9 @@
 (defvar *namespace* "roseus_resume")
 
 ;; conditions
-(defcondition on-interruption :slots (status) :super interruption-event)
-(defcondition on-standby :slots (status) :super interruption-event)
-(defcondition on-resume :slots (status) :super interruption-event)
+(defcondition on-interruption :slots (status) :super interruption)
+(defcondition on-standby :slots (status) :super interruption)
+(defcondition on-resume :slots (status) :super interruption)
 
 ;; define callback
 (defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
@@ -147,7 +147,7 @@
 
        ;; generate & install interruption handlers
        (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
-       (install-handler interruption-event 'interruption-handler-with-controller-interrupt)
+       (install-handler interruption 'interruption-handler-with-controller-interrupt)
        (install-handler on-interruption
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
        (install-handler on-standby
