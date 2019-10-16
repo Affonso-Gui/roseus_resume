@@ -1,0 +1,9 @@
+<launch>
+
+  <node name="monitor_controller" pkg="roseus_resume" type="monitor_controller"
+        required="true" output="screen" />
+  
+  <node name="stop_process" pkg="roseus_resume" type="stop_process"
+        required="true" output="screen" />
+
+</launch>

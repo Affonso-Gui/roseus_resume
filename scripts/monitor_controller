@@ -1,11 +1,12 @@
 #! /usr/bin/env python
 
+from actionlib_msgs.msg import GoalID
+from control_msgs.msg import FollowJointTrajectoryAction
 from roseus_resume.msg import ControllerActionStatus
 from roseus_resume.srv import GetControllerActionStatus
 from roseus_resume.srv import GetControllerActionStatusResponse
-from actionlib_msgs.msg import GoalID
-import argparse
-from control_msgs.msg import FollowJointTrajectoryAction
+from roseus_resume.srv import RegisterControllerMonitor
+from roseus_resume.srv import RegisterControllerMonitorResponse
 import rospy
 
 
@@ -64,14 +65,32 @@ class MonitorController(object):
 
 
 class MonitorAllControllers(object):
-    def __init__(self, ns, *controllers):
-        self.controllers = [MonitorController(x) for x in controllers]
+    def __init__(self):
+        self.controllers = []
+        self.register_service = rospy.Service(
+            'roseus_resume/register_controller_monitor',
+            RegisterControllerMonitor,
+            self.register)
 
-        if ns.endswith('/'):
-            ns = ns[:-1]
-
-        self.interrupt_service = rospy.Service(
-            ns + '/get_controller_status', GetControllerActionStatus, self.interrupt_all)
+    def register(self, req):
+        res = RegisterControllerMonitorResponse()
+        if not self.controllers:
+            # Set namespace
+            self.ns = req.namespace or 'roseus_resume'
+            if self.ns.endswith('/'):
+                self.ns = self.ns[:-1]
+            # Initialize controller monitoring instances
+            self.controllers = [MonitorController(x) for x in req.controller_topics]
+            # Start monitoring service server
+            self.interrupt_service = rospy.Service(
+                self.ns + '/get_controller_status',
+                GetControllerActionStatus,
+                self.interrupt_all)
+            res.success = True
+        else:
+            rospy.logwarn("MonitorController already registered!")
+            res.success = False
+        return res
 
     def interrupt_all(self, req):
         res = GetControllerActionStatusResponse()
@@ -83,21 +102,9 @@ class MonitorAllControllers(object):
 
 
 def main():
-    p = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--controller", "-c", action='append',
-                   help="motor controllers")
-    p.add_argument("--namespace", "-ns", default='roseus_resume',
-                   help="interrupt service namespace")
-    args = p.parse_args()
-
-    rospy.init_node("interrupt_server", disable_signals=True)
-    MonitorAllControllers(args.namespace, *args.controller)
-
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        rospy.logwarn("Finished.")
+    rospy.init_node("roseus_resume_monitor_controller")
+    MonitorAllControllers()
+    rospy.spin()
 
 
 if __name__ == '__main__':

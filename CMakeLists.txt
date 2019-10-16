@@ -17,6 +17,8 @@ add_message_files(FILES
 
 add_service_files(FILES
   GetControllerActionStatus.srv
+  RegisterControllerMonitor.srv
+  RegisterInterruptionProcess.srv
   RegisterIntervention.srv
 )
 

@@ -132,18 +132,32 @@
   (let ((service-name "/roseus_resume/get_controller_status"))
     `(progn
        ;; set interruption signals
-       (unix:system ,(format nil "rosrun roseus_resume stop_process ~A -ns ~A &"
-                             (unix:getpid) namespace))
+       (unless (ros::service-exists "roseus_resume/register_interruption_process")
+         (ros::ros-warn "Make sure to launch start_monitoring.launch!")
+         (error "Service roseus_resume/register_interruption_process not found"))
+       (assert
+        (send
+         (ros::service-call
+          "roseus_resume/register_interruption_process"
+          (instance roseus_resume::RegisterInterruptionProcessRequest :init
+                    :pid ,(unix:getpid)
+                    :namespace ,namespace))
+         :success)
+        "Service call to roseus_resume/register_interruption_process failed")
 
        ;; monitor controllers state
        (unless (or (ros::service-exists ,service-name)
                    (send ,robot-interface :simulation-modep))
-         (unix:system
-          (with-output-to-string (s)
-            (format s "rosrun roseus_resume monitor_controller")
-            (dolist (ca (send ,robot-interface :get-val "CONTROLLER-ACTIONS"))
-              (format s " -c ~A" (send ca :name)))
-            (format s " &"))))
+         (assert
+          (send
+           (ros::service-call
+            "roseus_resume/register_controller_monitor"
+            (instance roseus_resume::RegisterControllerMonitorRequest :init
+                      :controller_topics
+                      (mapcar #'(lambda (ca) (send ca :name))
+                              (send ,robot-interface :get-val "CONTROLLER-ACTIONS"))))
+           :success)
+          "Service call to roseus_resume/register_controller_monitor failed"))
 
        ;; generate & install interruption handlers
        (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)

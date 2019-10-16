@@ -1,16 +1,22 @@
 #! /usr/bin/env python
 
-import argparse
 import os
 import rospy
 import rostopic
 import signal
 import traceback
+from roseus_resume.srv import RegisterInterruptionProcess
+from roseus_resume.srv import RegisterInterruptionProcessResponse
+from roseus_resume.srv import RegisterIntervention
+from roseus_resume.srv import RegisterInterventionResponse
 from std_msgs.msg import Empty
-from roseus_resume.srv import RegisterIntervention, RegisterInterventionResponse
+from threading import Thread
+
 
 class StopSubscriber(object):
     def __init__(self, pid, ns):
+        if ns.endswith('/'):
+            ns = ns[:-1]
         self.pid = pid
         self.ns = ns
         self.interventions = []
@@ -22,6 +28,7 @@ class StopSubscriber(object):
         # Use fixed namespace for 'register_intervention' service
         self.register_srv = rospy.Service('roseus_resume/register_intervention',
                                           RegisterIntervention, self.register)
+        rospy.loginfo("Monitoring pid %d..." % pid)
 
     def register(self, msg):
         topic_name = rospy.resolve_name(msg.topic)
@@ -56,19 +63,40 @@ class StopSubscriber(object):
             self.rate.sleep()
 
 
+class StopSubscriberThread(Thread):
+    def __init__(self, pid, ns):
+        Thread.__init__(self)
+        self.stop_subscriber_instance = StopSubscriber(pid, ns)
+
+    def run(self):
+        self.stop_subscriber_instance.spin()
+
+
+def register_interruption_process(req):
+    res = RegisterInterruptionProcessResponse()
+    ns = req.namespace or "intervention"
+    pid = req.pid
+    # Check if process exists
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        rospy.logwarn("PID %d not found!" % pid)
+        res.success = False
+        return res
+    thread = StopSubscriberThread(pid, ns)
+    thread.start()
+
+    res.success = True
+    return res
+
+
 def main():
-    p = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("pid", type=int, help="process id")
-    p.add_argument("--namespace", "-ns", type=str, help="ROS namespace",
-                   default="intervention")
-    args = p.parse_args()
-
-    rospy.init_node("stopper" + str(args.pid), disable_signals=True)
-
-    StopInstance = StopSubscriber(args.pid, args.namespace)
-    rospy.loginfo("Monitoring pid %d..." % args.pid)
-    StopInstance.spin()
+    rospy.init_node("roseus_resume_stop_process")
+    rospy.Service(
+        "roseus_resume/register_interruption_process",
+        RegisterInterruptionProcess,
+        register_interruption_process)
+    rospy.spin()
 
 
 if __name__ == '__main__':

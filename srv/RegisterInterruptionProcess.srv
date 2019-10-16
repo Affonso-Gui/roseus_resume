@@ -1,0 +1,4 @@
+string namespace
+int32 pid
+---
+bool success
