@@ -191,7 +191,7 @@
             (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
                  (symbol-pname sym)))))
     (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name))))
-          (srv-name "/roseus_resume/register_intervention"))
+          (srv-name (format nil "/roseus_resume/register_intervention_~A" (unix:getpid))))
       `(progn
          (unless (boundp ',name)
            (defcondition ,name :super intervention))

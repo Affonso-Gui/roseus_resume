@@ -26,8 +26,11 @@ class StopSubscriber(object):
         self.resume_sub = rospy.Subscriber(self.ns + '/resume',
                                            Empty, self.resume)
         # Use fixed namespace for 'register_intervention' service
-        self.register_srv = rospy.Service('roseus_resume/register_intervention',
-                                          RegisterIntervention, self.register)
+        # Add pid suffix to allow multiple instances
+        self.register_srv = rospy.Service(
+            'roseus_resume/register_intervention_{}'.format(self.pid),
+            RegisterIntervention,
+            self.register)
         rospy.loginfo("Monitoring pid %d..." % pid)
 
     def register(self, msg):
