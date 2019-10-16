@@ -133,8 +133,7 @@
     `(progn
        ;; set interruption signals
        (unless (ros::service-exists "roseus_resume/register_interruption_process")
-         (ros::ros-warn "Make sure to launch start_monitoring.launch!")
-         (error "Service roseus_resume/register_interruption_process not found"))
+         (error "Service roseus_resume/register_interruption_process not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
        (assert
         (send
          (ros::service-call
