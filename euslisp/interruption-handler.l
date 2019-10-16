@@ -6,6 +6,7 @@
 (defmethod robot-interface
  (:get-action-status ()
   (ros::ros-warn "No actions being monitored")
+  (ros::ros-warn "Make sure to call install-interruption-handler")
   nil)
  (:interrupt-angle-vector ()
   (send self :cancel-angle-vector))
@@ -118,11 +119,16 @@
   `(progn
      (defmethod robot-interface
        (:get-action-status ()
-        (ros::service-call ,service-name
-          (instance roseus_resume::GetControllerActionStatusRequest :init))))
+        (if (ros::service-exists ,service-name)
+            (ros::service-call ,service-name
+                               (instance roseus_resume::GetControllerActionStatusRequest :init))
+            (error ,(format nil "Service ~A not found!" service-name)))))
      (compile
       (defun interruption-handler-with-controller-interrupt (c)
-        (let ((action-status (send ,robot-interface :get-action-status)))
+        (let ((action-status
+               (handler-case (send ,robot-interface :get-action-status)
+                 ;; ensure interruption even upon error
+                 (error (e) (signals on-interruption :status nil) (next-handler)))))
           (signals on-interruption :status action-status)
           (signals on-standby :message "keyboard interrupt" :status action-status)
           (signals on-resume :status action-status))))))
