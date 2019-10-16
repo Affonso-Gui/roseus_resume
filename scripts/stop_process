@@ -31,7 +31,7 @@ class StopSubscriber(object):
             'roseus_resume/register_intervention_{}'.format(self.pid),
             RegisterIntervention,
             self.register)
-        rospy.loginfo("Monitoring pid %d..." % pid)
+        rospy.loginfo("Monitoring pid %d..." % self.pid)
 
     def register(self, msg):
         topic_name = rospy.resolve_name(msg.topic)
@@ -61,7 +61,14 @@ class StopSubscriber(object):
             try:
                 os.kill(self.pid, 0)
             except OSError:
-                rospy.logwarn("...Closing")
+                # Shutdown services and unregister topics
+                self.register_srv.shutdown()
+                self.stop_sub.unregister()
+                self.resume_sub.unregister()
+                for sub in self.interventions:
+                    sub.unregister()
+                # Print message and finish thread
+                rospy.logwarn("...Closing pid %d" % self.pid)
                 exit()
             self.rate.sleep()
 
