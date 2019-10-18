@@ -119,10 +119,14 @@
   `(progn
      (defmethod robot-interface
        (:get-action-status ()
-        (if (ros::service-exists ,service-name)
-            (ros::service-call ,service-name
-                               (instance roseus_resume::GetControllerActionStatusRequest :init))
-            (error ,(format nil "Service ~A not found!" service-name)))))
+        (cond
+          ((ros::service-exists ,service-name)
+           (ros::service-call ,service-name
+                              (instance roseus_resume::GetControllerActionStatusRequest :init)))
+          ((send ,robot-interface :simulation-modep)
+           (instance roseus_resume::GetControllerActionStatusResponse :init))
+          (t
+           (error ,(format nil "Service ~A not found!" service-name))))))
      (compile
       (defun interruption-handler-with-controller-interrupt (c)
         (let ((action-status
