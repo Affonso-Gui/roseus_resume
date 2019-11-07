@@ -132,7 +132,8 @@
         (let ((action-status
                (handler-case (send ,robot-interface :get-action-status)
                  ;; ensure interruption even upon error
-                 (error (e) (signals on-interruption :status nil) (next-handler)))))
+                 (error (e) (signals on-interruption :status nil)
+                            (signals e)))))
           (signals on-interruption :status action-status)
           (signals on-standby :message "keyboard interrupt" :status action-status)
           (signals on-resume :status action-status))))))
