@@ -47,29 +47,35 @@ class StopSubscriber(object):
             traceback.print_exc()
             return RegisterInterventionResponse(False)
 
+    def unregister(self):
+        # Shutdown services and unregister topics
+        self.register_srv.shutdown()
+        self.stop_sub.unregister()
+        self.resume_sub.unregister()
+        for sub in self.interventions:
+            sub.unregister()
+        # Print message and finish thread
+        rospy.logwarn("...Closing pid %d" % self.pid)
+        exit()
+
+    def _try_send_signal(self,sig):
+        try:
+            os.kill(self.pid, sig)
+        except OSError:
+            self.unregister()
+
     def intervention(self, msg=None):
-        os.kill(self.pid, signal.SIGUSR1)
+        self._try_send_signal(signal.SIGUSR1)
 
     def stop(self, msg=None):
-        os.kill(self.pid, signal.SIGINT)
+        self._try_send_signal(signal.SIGINT)
 
     def resume(self, msg=None):
-        os.kill(self.pid, signal.SIGCONT)
+        self._try_send_signal(signal.SIGCONT)
 
     def spin(self):
         while not rospy.is_shutdown():
-            try:
-                os.kill(self.pid, 0)
-            except OSError:
-                # Shutdown services and unregister topics
-                self.register_srv.shutdown()
-                self.stop_sub.unregister()
-                self.resume_sub.unregister()
-                for sub in self.interventions:
-                    sub.unregister()
-                # Print message and finish thread
-                rospy.logwarn("...Closing pid %d" % self.pid)
-                exit()
+            self._try_send_signal(0)
             self.rate.sleep()
 
 
