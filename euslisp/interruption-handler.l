@@ -141,19 +141,22 @@
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &key (namespace *namespace*))
   (let ((service-name "/roseus_resume/get_controller_status"))
-    `(progn
+    `(block install-interruption-handler
        ;; set interruption signals
        (unless (ros::service-exists "roseus_resume/register_interruption_process")
          (error "Service roseus_resume/register_interruption_process not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
-       (assert
-        (send
-         (ros::service-call
-          "roseus_resume/register_interruption_process"
-          (instance roseus_resume::RegisterInterruptionProcessRequest :init
-                    :pid ,(unix:getpid)
-                    :namespace ,namespace))
-         :success)
-        "Service call to roseus_resume/register_interruption_process failed")
+
+       ;; register_interruption_process fails if called by the second time
+       ;; so we do not use assert here
+       (unless
+           (send
+            (ros::service-call
+             "roseus_resume/register_interruption_process"
+             (instance roseus_resume::RegisterInterruptionProcessRequest :init
+                       :pid ,(unix:getpid)
+                       :namespace ,namespace))
+            :success)
+         (return-from install-interruption-handler nil))
 
        ;; monitor controllers state
        (unless (or (ros::service-exists ,service-name)
