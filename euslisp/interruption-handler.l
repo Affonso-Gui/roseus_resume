@@ -188,7 +188,7 @@
 ;;;;;;;;;;;;;;;;;
 
 (defcondition intervention :slots (request))
-(defconstant *intervention-groupname* "intervention")
+(defconstant *intervention-groupname* "roseus_resume.intervention")
 (ros::create-nodehandle *intervention-groupname*)
 (defun ros::spin-sigusr1 (sig code) (ros::wait-for-message 0.5 *intervention-groupname*))
 (unix:signal unix::sigusr1 'ros::spin-sigusr1)
