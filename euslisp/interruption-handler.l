@@ -98,8 +98,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          intervention defintervention register-callable-intervention
-          *namespace*))
+          intervention defintervention register-callable-intervention))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
