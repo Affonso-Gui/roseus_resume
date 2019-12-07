@@ -179,7 +179,9 @@
        (install-handler on-standby
          #'lisp::interruption-handler)
        (install-handler on-resume
-         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status)))))))
+         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
+
+       t)))
 
 
 ;;;;;;;;;;;;;;;;;
@@ -188,28 +190,48 @@
 
 (defcondition intervention :slots (request))
 (defconstant *intervention-groupname* "roseus_resume.intervention")
+(defconstant *intervention-groupname-multithread*
+  (format nil "~A.multithread" *intervention-groupname*))
 (ros::create-nodehandle *intervention-groupname*)
-(defun ros::spin-sigusr1 (sig code)
-  (ros::wait-for-message 0.01 *intervention-groupname*))
-(unix:signal unix::sigusr1 'ros::spin-sigusr1)
+(ros::create-nodehandle *intervention-groupname-multithread*)
+(defun raise-sigusr1 (msg)
+  (declare (ignore msg))
+  (unix:kill (unix:getpid) unix::sigusr1))
+(defun spin-sigusr1 (sig code)
+  (declare (ignore sig code))
+  (ros::spin-once *intervention-groupname*))
+(defun spin-intervention-multithread ()
+  (ros::ros-info "Monitoring PID: ~A" (unix:getpid))
+  (handler-case
+      (while (ros::ok)
+        (ros::spin-once *intervention-groupname-multithread*)
+        (ros::duration-sleep 0.05))
+    (error () nil))
+  (ros::ros-warn "Intervention Monitoring closed."))
+
+;; setup UNIX signal handler
+(unix:signal unix::sigusr1 'spin-sigusr1)
+
+;; setup groupname monitoring
+(unless (sys::free-threads) (sys::make-thread 1))
+(sys::thread-no-wait #'spin-intervention-multithread)
+
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
   (flet ((ros-name (sym)
            (string-downcase
             (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
                  (symbol-pname sym)))))
-    (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name))))
-          (srv-name (format nil "/roseus_resume/register_intervention_~A" (unix:getpid))))
+    (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name)))))
       `(progn
          (unless (boundp ',name)
            (defcondition ,name :super intervention))
          (ros::subscribe ,topic-name ,message-type
+                         #'raise-sigusr1
+                         :groupname *intervention-groupname-multithread*)
+         (ros::subscribe ,topic-name ,message-type
                          #'(lambda (msg) (signals ,name :request msg))
-                         :groupname *intervention-groupname*)
-         (ros::wait-for-service ,srv-name)
-         (ros::ros-info ,(format nil "Listener installed on ~S" topic-name))
-         (ros::service-call ,srv-name
-                            (instance roseus_resume::RegisterInterventionRequest :init :topic ,topic-name))))))
+                         :groupname *intervention-groupname*)))))
 
 
 ;; Utility to define and organize multiple callback definitions

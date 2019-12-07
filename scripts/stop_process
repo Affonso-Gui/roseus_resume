@@ -7,8 +7,6 @@ import signal
 import traceback
 from roseus_resume.srv import RegisterInterruptionProcess
 from roseus_resume.srv import RegisterInterruptionProcessResponse
-from roseus_resume.srv import RegisterIntervention
-from roseus_resume.srv import RegisterInterventionResponse
 from std_msgs.msg import Empty
 from threading import Thread
 
@@ -19,41 +17,17 @@ class StopSubscriber(object):
             ns = ns[:-1]
         self.pid = pid
         self.ns = ns
-        self.interventions = []
         self.rate = rospy.Rate(10)
         self.stop_sub = rospy.Subscriber(self.ns + '/interrupt',
                                          Empty, self.stop)
         self.resume_sub = rospy.Subscriber(self.ns + '/resume',
                                            Empty, self.resume)
-        # Use fixed namespace for 'register_intervention' service
-        # Add pid suffix to allow multiple instances
-        self.register_srv = rospy.Service(
-            'roseus_resume/register_intervention_{}'.format(self.pid),
-            RegisterIntervention,
-            self.register)
         rospy.loginfo("Monitoring pid %d..." % self.pid)
-
-    def register(self, msg):
-        topic_name = rospy.resolve_name(msg.topic)
-        message_type, name, _ = rostopic.get_topic_class(topic_name)
-        if not message_type:
-            rospy.logerr('No such topic: %s' % msg.topic)
-            return RegisterInterventionResponse(False)
-        try:
-            sub = rospy.Subscriber(name, message_type, self.intervention)
-            self.interventions.append(sub)
-            return RegisterInterventionResponse(True)
-        except Exception:
-            traceback.print_exc()
-            return RegisterInterventionResponse(False)
 
     def unregister(self):
         # Shutdown services and unregister topics
-        self.register_srv.shutdown()
         self.stop_sub.unregister()
         self.resume_sub.unregister()
-        for sub in self.interventions:
-            sub.unregister()
         # Print message and finish thread
         rospy.logwarn("...Closing pid %d" % self.pid)
         exit()
@@ -63,9 +37,6 @@ class StopSubscriber(object):
             os.kill(self.pid, sig)
         except OSError:
             self.unregister()
-
-    def intervention(self, msg=None):
-        self._try_send_signal(signal.SIGUSR1)
 
     def stop(self, msg=None):
         self._try_send_signal(signal.SIGINT)
