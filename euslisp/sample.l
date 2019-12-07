@@ -29,15 +29,6 @@ which send sigint and sigcont to the EusLisp process.
 ;; Overwrite default interruption behavior
 (install-handler roseus_resume:on-interruption #'(lambda (c) (send *ri* :stop-motion)))
 
-;; Locally overwrite interruption behaviors
-(defun demo ()
-  (handler-case
-      (prog1
-        (send *ri* :angle-vector (send *pr2* :reset-pose) 7000)
-        (send *ri* :wait-interpolation))
-    (roseus_resume:on-standby () (ros::warn "Aborted demo function!"))))
-
-
 ;; Register custom interventions
 
 ;; Creates a topic named `/roseus_resume/speak' of type `std_msgs/String'
@@ -49,7 +40,7 @@ which send sigint and sigcont to the EusLisp process.
 
 ;; The ROS message is stored in the intervention condition class
 ;; and can be accessed through the method `:request'
-;; setting `:recursive' to nil avoid the same handler is called again
+;; Setting `:recursive' to nil avoid that the same handler is called again
 ;; if the topic is published one more time during execution
 (install-handler roseus_resume::speak-message
   #'(lambda (c) (send *ri* :speak (send (send c :request) :data) :wait t))
