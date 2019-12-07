@@ -1,3 +1,4 @@
+(require :robot-interface "package://pr2eus/robot-interface.l")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CONTROLLER INTERFACE
@@ -98,7 +99,8 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          intervention defintervention register-callable-intervention))
+          intervention install-intervention-framework defintervention
+          register-callable-intervention))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -181,6 +183,9 @@
        (install-handler on-resume
          #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
 
+       ;; install intervention system
+       (install-intervention-framework)
+
        t)))
 
 
@@ -192,8 +197,6 @@
 (defconstant *intervention-groupname* "roseus_resume.intervention")
 (defconstant *intervention-groupname-multithread*
   (format nil "~A.multithread" *intervention-groupname*))
-(ros::create-nodehandle *intervention-groupname*)
-(ros::create-nodehandle *intervention-groupname-multithread*)
 (defun raise-sigusr1 (msg)
   (declare (ignore msg))
   (unix:kill (unix:getpid) unix::sigusr1))
@@ -201,21 +204,24 @@
   (declare (ignore sig code))
   (ros::spin-once *intervention-groupname*))
 (defun spin-intervention-multithread ()
-  (ros::ros-info "Monitoring PID: ~A" (unix:getpid))
   (handler-case
       (while (ros::ok)
         (ros::spin-once *intervention-groupname-multithread*)
         (ros::duration-sleep 0.05))
     (error () nil))
-  (ros::ros-warn "Intervention Monitoring closed."))
+  (ros::ros-error "Intervention Monitoring closed!"))
 
-;; setup UNIX signal handler
-(unix:signal unix::sigusr1 'spin-sigusr1)
+(defun install-intervention-framework ()
+  ;; test if already installed
+  (when (ros::create-nodehandle *intervention-groupname*)
+    (ros::create-nodehandle *intervention-groupname-multithread*)
 
-;; setup groupname monitoring
-(unless (sys::free-threads) (sys::make-thread 1))
-(sys::thread-no-wait #'spin-intervention-multithread)
+    ;; setup UNIX signal handler
+    (unix:signal unix::sigusr1 'spin-sigusr1)
 
+    ;; setup groupname monitoring
+    (unless (sys::free-threads) (sys::make-thread 1))
+    (sys::thread-no-wait #'spin-intervention-multithread)))
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
   (flet ((ros-name (sym)
@@ -224,8 +230,7 @@
                  (symbol-pname sym)))))
     (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name)))))
       `(progn
-         (unless (boundp ',name)
-           (defcondition ,name :super intervention))
+         (defcondition ,name :super intervention)
          (ros::subscribe ,topic-name ,message-type
                          #'raise-sigusr1
                          :groupname *intervention-groupname-multithread*)
