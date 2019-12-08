@@ -194,27 +194,27 @@
 ;;;;;;;;;;;;;;;;;
 
 (defcondition intervention :slots (ros-msg))
-(defconstant *intervention-groupname* "roseus_resume.intervention")
-(defconstant *intervention-groupname-multithread*
-  (format nil "~A.multithread" *intervention-groupname*))
+(defconstant +intervention-groupname+ "roseus_resume.intervention")
+(defconstant +intervention-groupname-multithread+
+  (format nil "~A.multithread" +intervention-groupname+))
 (defun raise-sigurg (msg)
   (declare (ignore msg))
   (unix:kill (unix:getpid) unix::sigurg))
 (defun spin-sigurg (sig code)
   (declare (ignore sig code))
-  (ros::spin-once *intervention-groupname*))
+  (ros::spin-once +intervention-groupname+))
 (defun spin-intervention-multithread ()
   (handler-case
       (while (ros::ok)
-        (ros::spin-once *intervention-groupname-multithread*)
+        (ros::spin-once +intervention-groupname-multithread+)
         (ros::duration-sleep 0.05))
     (error () nil))
   (ros::ros-error "Intervention Monitoring closed!"))
 
 (defun install-intervention-framework ()
   ;; test if already installed
-  (when (ros::create-nodehandle *intervention-groupname*)
-    (ros::create-nodehandle *intervention-groupname-multithread*)
+  (when (ros::create-nodehandle +intervention-groupname+)
+    (ros::create-nodehandle +intervention-groupname-multithread+)
 
     ;; setup UNIX signal handler
     (unix:signal unix::sigurg 'spin-sigurg)
@@ -233,10 +233,10 @@
          (defcondition ,name :super intervention)
          (ros::subscribe ,topic-name ,message-type
                          #'raise-sigurg
-                         :groupname *intervention-groupname-multithread*)
+                         :groupname +intervention-groupname-multithread+)
          (ros::subscribe ,topic-name ,message-type
                          #'(lambda (msg) (signals ,name :ros-msg msg))
-                         :groupname *intervention-groupname*)))))
+                         :groupname +intervention-groupname+)))))
 
 
 ;; Utility to define and organize multiple callback definitions
