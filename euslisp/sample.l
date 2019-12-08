@@ -39,11 +39,11 @@ which send sigint and sigcont to the EusLisp process.
     :topic-name "roseus_resume/speak")
 
 ;; The ROS message is stored in the intervention condition class
-;; and can be accessed through the method `:request'
+;; and can be accessed through the method `:ros-msg'
 ;; Setting `:recursive' to nil avoid that the same handler is called again
 ;; if the topic is published one more time during execution
 (install-handler roseus_resume::speak-message
-  #'(lambda (c) (send *ri* :speak (send (send c :request) :data) :wait t))
+  #'(lambda (c) (send *ri* :speak (send (send c :ros-msg) :data) :wait t))
   :recursive nil)
 
 ;; Utility to define multiple intervention callbacks

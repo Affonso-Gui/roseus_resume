@@ -193,7 +193,7 @@
 ;; INTERVENTION
 ;;;;;;;;;;;;;;;;;
 
-(defcondition intervention :slots (request))
+(defcondition intervention :slots (ros-msg))
 (defconstant *intervention-groupname* "roseus_resume.intervention")
 (defconstant *intervention-groupname-multithread*
   (format nil "~A.multithread" *intervention-groupname*))
@@ -235,7 +235,7 @@
                          #'raise-sigusr1
                          :groupname *intervention-groupname-multithread*)
          (ros::subscribe ,topic-name ,message-type
-                         #'(lambda (msg) (signals ,name :request msg))
+                         #'(lambda (msg) (signals ,name :ros-msg msg))
                          :groupname *intervention-groupname*)))))
 
 
@@ -251,7 +251,7 @@
     (eval
      `(install-handler
        ,(intern (symbol-pname cb) "ROSEUS_RESUME")
-       ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :request))))))))
+       ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :ros-msg))))))))
 
 (defmacro register-callable-intervention (&rest methods)
   "(&rest (selector lambda-list msg-type &rest body))"
