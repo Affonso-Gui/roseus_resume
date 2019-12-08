@@ -197,10 +197,10 @@
 (defconstant *intervention-groupname* "roseus_resume.intervention")
 (defconstant *intervention-groupname-multithread*
   (format nil "~A.multithread" *intervention-groupname*))
-(defun raise-sigusr1 (msg)
+(defun raise-sigurg (msg)
   (declare (ignore msg))
-  (unix:kill (unix:getpid) unix::sigusr1))
-(defun spin-sigusr1 (sig code)
+  (unix:kill (unix:getpid) unix::sigurg))
+(defun spin-sigurg (sig code)
   (declare (ignore sig code))
   (ros::spin-once *intervention-groupname*))
 (defun spin-intervention-multithread ()
@@ -217,7 +217,7 @@
     (ros::create-nodehandle *intervention-groupname-multithread*)
 
     ;; setup UNIX signal handler
-    (unix:signal unix::sigusr1 'spin-sigusr1)
+    (unix:signal unix::sigurg 'spin-sigurg)
 
     ;; setup groupname monitoring
     (unless (sys::free-threads) (sys::make-thread 1))
@@ -232,7 +232,7 @@
       `(progn
          (defcondition ,name :super intervention)
          (ros::subscribe ,topic-name ,message-type
-                         #'raise-sigusr1
+                         #'raise-sigurg
                          :groupname *intervention-groupname-multithread*)
          (ros::subscribe ,topic-name ,message-type
                          #'(lambda (msg) (signals ,name :ros-msg msg))
