@@ -18,7 +18,7 @@
     :topic-name "Tablet/voice"
     :message-type jsk_gui_msgs::VoiceMessage)
 (install-handler speech-recognition-intervention 
-  '(lambda-closure nil 0 0 (c) (speech-recognition-callback (send (send c :request) :texts))))
+  '(lambda-closure nil 0 0 (c) (speech-recognition-callback (send (send c :ros-msg) :texts))))
 
 (defmacro register-speech-intervention (word &rest body)
   `(setq *speech-intervention-alist*
