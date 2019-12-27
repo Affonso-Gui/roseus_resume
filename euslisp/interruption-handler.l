@@ -13,6 +13,7 @@
   (send self :cancel-angle-vector))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
    (unless (send status :status) (return-from :resume-angle-vector nil))
+   (send *ri* :spin-once) ;; update joint positions
    (let ((offset 0.0))
      (labels
          ((offset-point (point tm)
@@ -23,9 +24,14 @@
                     (find name (send self controller-type)
                           :key #'(lambda (x) (cdr (assoc :controller-action x)))
                           :test #'string-equal))
-                   (state (cdr (assoc :controller-state controller)))
-                   (msg (send self :state (intern (string-upcase state) *keyword-package*))))
-              (map cons #'cons (send msg :joint_names) (send msg :actual :positions))))
+                   (joint-names (cdr (assoc :joint-names controller)))
+                   (joint-positions
+                    (mapcar #'(lambda (j)
+                                (send robot (intern (string-upcase j) *keyword-package*)
+                                      :ros-joint-angle))
+                            joint-names)))
+              (assert joint-names "Cannot find :joint-names of controller ~A" controller)
+              (mapcar #'cons joint-names joint-positions)))
           (update-offset (start end)
             (dolist (p start)
               (let* ((diff (abs (- (cdr p) (cdr (assoc (car p) end :test #'string=)))))
