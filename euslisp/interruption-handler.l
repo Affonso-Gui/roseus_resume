@@ -201,33 +201,19 @@
 
 (defcondition intervention :slots (ros-msg))
 (defconstant +intervention-groupname+ "roseus_resume.intervention")
-(defconstant +intervention-groupname-multithread+
-  (format nil "~A.multithread" +intervention-groupname+))
-(defun raise-sigurg (msg)
-  (declare (ignore msg))
-  (unix:kill (unix:getpid) unix::sigurg))
 (defun spin-sigurg (sig code)
   (declare (ignore sig code))
-  (ros::spin-once +intervention-groupname+))
-(defun spin-intervention-multithread ()
-  (handler-case
-      (while (ros::ok)
-        (ros::spin-once +intervention-groupname-multithread+)
-        (ros::duration-sleep 0.05))
-    (error () nil))
-  (ros::ros-error "Intervention Monitoring closed!"))
+  (ros::wait-for-message 0.2 +intervention-groupname+))
 
 (defun install-intervention-framework ()
+  (unless (ros::service-exists "roseus_resume/register_intervention")
+    (error "Service roseus_resume/register_intervention not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
+
   ;; test if already installed
   (when (ros::create-nodehandle +intervention-groupname+)
-    (ros::create-nodehandle +intervention-groupname-multithread+)
-
     ;; setup UNIX signal handler
     (unix:signal unix::sigurg 'spin-sigurg)
-
-    ;; setup groupname monitoring
-    (unless (sys::free-threads) (sys::make-thread 1))
-    (sys::thread-no-wait #'spin-intervention-multithread)))
+    t))
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
   (flet ((ros-name (sym)
@@ -238,11 +224,19 @@
       `(progn
          (defcondition ,name :super intervention)
          (ros::subscribe ,topic-name ,message-type
-                         #'raise-sigurg
-                         :groupname +intervention-groupname-multithread+)
-         (ros::subscribe ,topic-name ,message-type
                          #'(lambda (msg) (signals ,name :ros-msg msg))
-                         :groupname +intervention-groupname+)))))
+                         :groupname +intervention-groupname+)
+         (let ((req (instance roseus_resume::RegisterInterventionRequest :init))
+               success)
+           (send req :pid ,(unix:getpid))
+           (send req :topic ,topic-name)
+           (send req :type (princ-to-string (send ,message-type :name)))
+           (setq success
+                 (send (ros::service-call "roseus_resume/register_intervention" req) :success))
+           (unless success
+             (ros::error "Failed to register intervention ~A at ~A!" ',name ,topic-name))
+           ;; return value
+           (when success ',name))))))
 
 
 ;; Utility to define and organize multiple callback definitions

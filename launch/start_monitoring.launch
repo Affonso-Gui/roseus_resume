@@ -6,4 +6,6 @@
   <node name="stop_process" pkg="roseus_resume" type="stop_process"
         required="true" output="screen" />
 
+  <node name="signalize_intervention" pkg="roseus_resume" type="signalize_intervention.l" output="screen" />
+
 </launch>
