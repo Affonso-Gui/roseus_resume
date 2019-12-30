@@ -9,6 +9,16 @@
   "hash-table for list of subscribed topics by PID")
 (defvar check-count 0)
 
+(defun import-ros-package (str)
+  (let ((pos (position #\: str)))
+    (when pos
+      (let ((pkg (subseq str 0 pos)))
+        (ros::load-ros-package pkg)))))
+
+(defun evaluate-msg (str)
+  (import-ros-package str)
+  (eval (read-from-string str)))
+
 (defun generate-kill-function (pid)
   `(lambda-closure nil 0 0 (msg) (unix:kill ,pid unix::sigurg)))
 
@@ -32,7 +42,7 @@
     (handler-case
         (let ((pid (send msg :pid))
               (topic-name (send msg :topic))
-              (message-type (eval (read-from-string (send msg :type)))))
+              (message-type (evaluate-msg (send msg :type))))
           (ros::ros-info "Registering intervention on topic ~S with PID ~S~%" topic-name pid)
           (install-subscriber pid topic-name message-type)
           (send res :success t))
