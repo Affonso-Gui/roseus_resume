@@ -224,7 +224,8 @@
       `(progn
          (defcondition ,name :super intervention)
          (ros::subscribe ,topic-name ,message-type
-                         #'(lambda (msg) (signals ,name :ros-msg msg))
+			 `(lambda-closure nil 0 0 (msg)
+			    (signals ,',name :ros-msg msg))
                          :groupname +intervention-groupname+)
          (let ((req (instance roseus_resume::RegisterInterventionRequest :init))
                success)
