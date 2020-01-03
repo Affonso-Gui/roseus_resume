@@ -216,6 +216,7 @@
     t))
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
+  (assert (symbolp name) type-error "symbol expected")
   (flet ((ros-name (sym)
            (string-downcase
             (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
