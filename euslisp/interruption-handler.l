@@ -185,7 +185,10 @@
        (install-handler on-interruption
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
        (install-handler on-standby
-         #'lisp::interruption-handler)
+         #'(lambda (c)
+             ;; suppress interventions during repl evaluation
+             (handler-bind ((unix::sigurg-received #'(lambda (condition-instance) nil)))
+               (lisp::interruption-handler c))))
        (install-handler on-resume
          #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
 
@@ -201,8 +204,8 @@
 
 (defcondition intervention :slots (ros-msg))
 (defconstant +intervention-groupname+ "roseus_resume.intervention")
-(defun spin-sigurg (sig code)
-  (declare (ignore sig code))
+(defun spin-sigurg (condition-instance)
+  (declare (ignore condition-instance))
   (ros::wait-for-message 0.2 +intervention-groupname+))
 
 (defun install-intervention-framework ()
@@ -212,7 +215,8 @@
   ;; test if already installed
   (when (ros::create-nodehandle +intervention-groupname+)
     ;; setup UNIX signal handler
-    (unix:signal unix::sigurg 'spin-sigurg)
+    (unix:install-signal-handler unix::sigurg unix::sigurg-received)
+    (install-handler unix::sigurg-received 'spin-sigurg)
     t))
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
