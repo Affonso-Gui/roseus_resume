@@ -116,9 +116,9 @@
 (defvar *namespace* "roseus_resume")
 
 ;; conditions
-(defcondition on-interruption :slots (status) :super interruption)
-(defcondition on-standby :slots (status) :super interruption)
-(defcondition on-resume :slots (status) :super interruption)
+(defcondition on-interruption :slots (status))
+(defcondition on-standby :slots (status interruption-instance))
+(defcondition on-resume :slots (status))
 
 ;; define callback
 (defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
@@ -142,7 +142,8 @@
                  (error (e) (signals on-interruption :status nil)
                             (signals e)))))
           (signals on-interruption :status action-status)
-          (signals on-standby :message "keyboard interrupt" :status action-status)
+          (signals on-standby :status action-status
+                   :interruption-instance c)
           (signals on-resume :status action-status))))))
 
 ;; install callback
@@ -179,21 +180,18 @@
            :success)
           "Service call to roseus_resume/register_controller_monitor failed"))
 
+       ;; install intervention system
+       (install-intervention-framework)
+
        ;; generate & install interruption handlers
        (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
        (install-handler interruption 'interruption-handler-with-controller-interrupt)
        (install-handler on-interruption
          #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
        (install-handler on-standby
-         #'(lambda (c)
-             ;; suppress interventions during repl evaluation
-             (handler-bind ((unix::sigurg-received #'(lambda (condition-instance) nil)))
-               (lisp::interruption-handler c))))
+         #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
        (install-handler on-resume
          #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
-
-       ;; install intervention system
-       (install-intervention-framework)
 
        t)))
 
@@ -217,6 +215,12 @@
     ;; setup UNIX signal handler
     (unix:install-signal-handler unix::sigurg unix::sigurg-received)
     (install-handler unix::sigurg-received 'spin-sigurg)
+    (install-handler interruption
+       #'(lambda (c)
+           ;; suppress interventions during repl evaluation
+           (handler-bind ((unix::sigurg-received #'(lambda (condition-instance) nil)))
+             ;; call default handler
+             (invoke-next-handler c))))
     t))
 
 (defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
