@@ -4,15 +4,33 @@
 ;; CONTROLLER INTERFACE
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defmethod controller-action-client
+ (:action-goal ()
+  (send ros::comm-state :action-goal))
+ (:current-time ()
+  (cond
+    ((send ri :simulation-modep)
+     (ros::time (/ current-time 1000.0)))
+    ((null (send ros::comm-state :action-goal))
+     (ros::time 0))
+    (t
+     (ros::time- last-feedback-msg-stamp
+                 (send (send ros::comm-state :action-goal) :header :stamp))))))
+
 (defmethod robot-interface
  (:get-action-status ()
-  (ros::ros-warn "No actions being monitored")
-  (ros::ros-warn "Make sure to call install-interruption-handler")
-  nil)
+  (send self :spin-once)
+  (mapcar
+   #'(lambda (ac)
+       ;; only interrupt active controllers
+       (when (equal (send ac :get-val "SIMPLE-STATE") ros::*simple-goal-state-active*)
+         (list (send ac :name) (send ac :action-goal) (send ac :current-time))))
+   controller-actions))
  (:interrupt-angle-vector ()
   (send self :cancel-angle-vector))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
-   (unless (send status :status) (return-from :resume-angle-vector nil))
+   (unless (some #'identity status)
+     (return-from :resume-angle-vector nil))
    (send *ri* :spin-once) ;; update joint positions
    (let ((offset 0.0))
      (labels
@@ -39,61 +57,63 @@
                      (off (* scale (/ diff (send joint :max-joint-velocity)))))
                 (if (> off offset) (setq offset off))))))
 
-       (dolist (s (send status :status))
-         (let* ((goal (send s :goal))
-                (feedback (send s :feedback))
-                (tm (send feedback :actual :time_from_start))
-                (last-point (car (last (send goal :trajectory :points)))))
+       (dolist (s status)
+         (when s
+           (let* ((name (first s))
+                  (goal (send (second s) :goal))
+                  (tm (third s))
+                  (last-point (car (last (send goal :trajectory :points)))))
 
-           ;; Remove completed steps
-           (send goal :trajectory :points
-                 (remove-if #'(lambda (p) (ros::time< (send p :time_from_start) tm))
-                            (send goal :trajectory :points)))
+             ;; Remove completed steps
+             (send goal :trajectory :points
+                   (remove-if #'(lambda (p) (ros::time< (send p :time_from_start) tm))
+                              (send goal :trajectory :points)))
 
-           ;; Ensure last waypoint
-           (unless (send goal :trajectory :points)
-             (send last-point :time_from_start tm)
-             (send goal :trajectory :points (list last-point)))
+             ;; Ensure last waypoint
+             (unless (send goal :trajectory :points)
+               (send last-point :time_from_start tm)
+               (send goal :trajectory :points (list last-point)))
 
-           ;; Shift based on time_from_start
-           (send goal :trajectory :points
-                 (mapcar #'(lambda (p) (offset-point p (- (send tm :to-sec))))
-                         (send goal :trajectory :points)))
+             ;; Shift based on time_from_start
+             (send goal :trajectory :points
+                   (mapcar #'(lambda (p) (offset-point p (- (send tm :to-sec))))
+                           (send goal :trajectory :points)))
 
-           ;; Update offset
-           (update-offset (actual-positions (send s :name))
-                          (map cons #'cons
-                               (send goal :trajectory :joint_names)
-                               (send (car (send goal :trajectory :points)) :positions)))))
+             ;; Update offset
+             (update-offset (actual-positions name)
+                            (map cons #'cons
+                                 (send goal :trajectory :joint_names)
+                                 (send (car (send goal :trajectory :points)) :positions))))))
 
        ;; Check min-time
        (setq offset (max offset min-time))
 
-       (dolist (s (send status :status))
-         (let* ((action (find (send s :name) controller-actions
-                              :key #'(lambda (x) (send x :name))
-                              :test #'string-equal))
-                (action-goal (send action :make-goal-instance))
-                (tm (ros::time-now)))
+       (mapc #'(lambda (s ac)
+                 (when s
+                   (let ((action-goal (send ac :make-goal-instance))
+                         (goal (send (second s) :goal))
+                         (tm (ros::time-now)))
 
-           ;; Shift based on time offset
-           (send s :goal :trajectory :points
-                 (mapcar #'(lambda (p) (offset-point p offset))
-                         (send s :goal :trajectory :points)))
+                     ;; Shift based on time offset
+                     (send goal :trajectory :points
+                           (mapcar #'(lambda (p) (offset-point p offset))
+                                   (send goal :trajectory :points)))
 
-           ;; Prepare message
-           (send action-goal :header :stamp tm)
-           (send action-goal :header :seq 1)
-           (send action-goal :goal :trajectory (send s :goal :trajectory))
-           (send action-goal :goal :trajectory :header :stamp tm)
-           (send action-goal :goal :trajectory :header :seq 1)
+                     ;; Prepare message
+                     (send action-goal :header :stamp tm)
+                     (send action-goal :header :seq 1)
+                     (send action-goal :goal :trajectory (send goal :trajectory))
+                     (send action-goal :goal :trajectory :header :stamp tm)
+                     (send action-goal :goal :trajectory :header :seq 1)
 
-           ;; Send goal to controller
-           (send self :spin-once)
-           (send action :send-goal action-goal)))
+                     ;; Send goal to controller
+                     (send self :spin-once)
+                     (send ac :send-goal action-goal))))
+             status controller-actions)
 
        ;; Wait offset before resuming
-       (unix:usleep (truncate (* offset 1000000)))))))
+       (unix:usleep (truncate (* offset 1000000)))
+       t))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -121,79 +141,57 @@
 (defcondition on-resume :slots (status))
 
 ;; define callback
-(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface service-name)
+(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface)
   ;; compile handler to keep the top-level env during the interruption repl
-  `(progn
-     (defmethod robot-interface
-       (:get-action-status ()
-        (cond
-          ((ros::service-exists ,service-name)
-           (ros::service-call ,service-name
-                              (instance roseus_resume::GetControllerActionStatusRequest :init)))
-          ((send ,robot-interface :simulation-modep)
-           (instance roseus_resume::GetControllerActionStatusResponse :init))
-          (t
-           (error ,(format nil "Service ~A not found!" service-name))))))
-     (compile
-      (defun interruption-handler-with-controller-interrupt (c)
-        (let ((action-status
-               (handler-case (send ,robot-interface :get-action-status)
-                 ;; ensure interruption even upon error
-                 (error (e) (signals on-interruption :status nil)
-                            (signals e)))))
-          (signals on-interruption :status action-status)
-          (signals on-standby :status action-status
-                   :interruption-instance c)
-          (signals on-resume :status action-status))))))
+  `(compile
+    (defun interruption-handler-with-controller-interrupt (c)
+      (let ((action-status
+             (handler-case (send ,robot-interface :get-action-status)
+               ;; ensure interruption even upon error
+               (error (e) (signals on-interruption :status nil)
+                      (signals e)))))
+        (ros::ros-info ";; action-status: ~A" action-status)
+        (ros::ros-info ";; on-interruption...")
+        (signals on-interruption :status action-status)
+        (ros::ros-info ";; on-standby...")
+        (signals on-standby :status action-status
+                 :interruption-instance c)
+        (ros::ros-info ";; on-resume...")
+        (signals on-resume :status action-status)))))
 
 ;; install callback
 (defmacro install-interruption-handler (robot-interface &key (namespace *namespace*))
-  (let ((service-name "/roseus_resume/get_controller_status"))
-    `(block install-interruption-handler
-       ;; set interruption signals
-       (unless (ros::service-exists "roseus_resume/register_interruption_process")
-         (error "Service roseus_resume/register_interruption_process not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
+  `(block install-interruption-handler
+     ;; set interruption signals
+     (unless (ros::service-exists "roseus_resume/register_interruption_process")
+       (error "Service roseus_resume/register_interruption_process not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
 
-       ;; register_interruption_process fails if called by the second time
-       ;; so we do not use assert here
-       (unless
-           (send
-            (ros::service-call
-             "roseus_resume/register_interruption_process"
-             (instance roseus_resume::RegisterInterruptionProcessRequest :init
-                       :pid ,(unix:getpid)
-                       :namespace ,namespace))
-            :success)
-         (return-from install-interruption-handler nil))
+     ;; register_interruption_process fails if called by the second time
+     ;; so we do not use assert here
+     (unless
+         (send
+          (ros::service-call
+           "roseus_resume/register_interruption_process"
+           (instance roseus_resume::RegisterInterruptionProcessRequest :init
+                     :pid ,(unix:getpid)
+                     :namespace ,namespace))
+          :success)
+       (return-from install-interruption-handler nil))
 
-       ;; monitor controllers state
-       (unless (or (ros::service-exists ,service-name)
-                   (send ,robot-interface :simulation-modep))
-         (assert
-          (send
-           (ros::service-call
-            "roseus_resume/register_controller_monitor"
-            (instance roseus_resume::RegisterControllerMonitorRequest :init
-                      :controller_topics
-                      (mapcar #'(lambda (ca) (send ca :name))
-                              (send ,robot-interface :get-val "CONTROLLER-ACTIONS"))))
-           :success)
-          "Service call to roseus_resume/register_controller_monitor failed"))
+     ;; install intervention system
+     (install-intervention-framework)
 
-       ;; install intervention system
-       (install-intervention-framework)
+     ;; generate & install interruption handlers
+     (generate-interruption-handler-with-controller-interrupt ,robot-interface)
+     (install-handler interruption 'interruption-handler-with-controller-interrupt)
+     (install-handler on-interruption
+                      #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
+     (install-handler on-standby
+                      #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
+     (install-handler on-resume
+                      #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
 
-       ;; generate & install interruption handlers
-       (generate-interruption-handler-with-controller-interrupt ,robot-interface ,service-name)
-       (install-handler interruption 'interruption-handler-with-controller-interrupt)
-       (install-handler on-interruption
-         #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
-       (install-handler on-standby
-         #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
-       (install-handler on-resume
-         #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
-
-       t)))
+     t))
 
 
 ;;;;;;;;;;;;;;;;;
