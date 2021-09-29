@@ -1,5 +1,0 @@
-int32 pid
-string topic
-string type
----
-bool success

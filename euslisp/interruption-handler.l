@@ -121,19 +121,16 @@
 ;;;;;;;;;;;;;;;;;;;;;;;
 
 (unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
-(ros::load-ros-manifest "roseus_resume")
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          intervention install-intervention-framework defintervention
-          register-callable-intervention))
+          intervention defintervention define-urgent-intervention
+          install-intervention-framework))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; INTERRUPTION HANDLERS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defvar *namespace* "roseus_resume")
 
 ;; conditions
 (defcondition on-interruption :slots (status))
@@ -160,26 +157,8 @@
         (signals on-resume :status action-status)))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface &key (namespace *namespace*))
+(defmacro install-interruption-handler (robot-interface)
   `(block install-interruption-handler
-     ;; set interruption signals
-     (unless (ros::service-exists "roseus_resume/register_interruption_process")
-       (error "Service roseus_resume/register_interruption_process not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
-
-     ;; register_interruption_process fails if called by the second time
-     ;; so we do not use assert here
-     (unless
-         (send
-          (ros::service-call
-           "roseus_resume/register_interruption_process"
-           (instance roseus_resume::RegisterInterruptionProcessRequest :init
-                     :pid ,(unix:getpid)
-                     :namespace ,namespace))
-          :success)
-       (return-from install-interruption-handler nil))
-
-     ;; install intervention system
-     (install-intervention-framework)
 
      ;; generate & install interruption handlers
      (generate-interruption-handler-with-controller-interrupt ,robot-interface)
@@ -190,7 +169,6 @@
                       #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
      (install-handler on-resume
                       #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
-
      t))
 
 
@@ -199,86 +177,64 @@
 ;;;;;;;;;;;;;;;;;
 
 (defcondition intervention :slots (ros-msg))
-(defconstant +intervention-groupname+ "roseus_resume.intervention")
-(defun spin-sigurg (condition-instance)
-  (declare (ignore condition-instance))
-  (ros::wait-for-message 0.2 +intervention-groupname+))
+(defvar *intervention-groupname* "roseus_resume.intervention")
+(defvar *urgent-intervention-signal* unix::sigurg)
+(defvar *monitor-interventions* t)
+(defvar *synch-port* (instance sys:synch-memory-port :init))
 
+;; utility
+(defun signal-intervention (topic-name condition-name msg)
+  (ros::ros-info ";; intervention message received at ~A" topic-name)
+  (signals condition-name :ros-msg msg))
+
+(defun urgent-intervention-cb (topic-name condition-name msg)
+  (ros::ros-info ";; urgent intervention message received at ~A" topic-name)
+  (send *synch-port* :write (list condition-name :ros-msg msg))
+  (unix::kill (unix:getpid) *urgent-intervention-signal*))
+
+(defun signal-urgent-intervention (sig code)
+  (ros::ros-info ";; signal-urgent-intervention")
+  (apply #'signals (send *synch-port* :read)))
+
+(defun spin-intervention-groupname ()
+  (ros::ros-info ";; checking for intervention messages...")
+  (while *monitor-interventions*
+    (ros::spin-once *intervention-groupname*)
+    (ros::sleep))
+  (ros::ros-warn ";; stop checking for intervention messages..."))
+
+;; installer
 (defun install-intervention-framework ()
-  (unless (ros::service-exists "roseus_resume/register_intervention")
-    (error "Service roseus_resume/register_intervention not found. Make sure to execute roslaunch roseus_resume start_monitoring.launch"))
+  ;; create and spin nodehandle in a new thread
+  (when (ros::create-nodehandle *intervention-groupname*)
+    ;; only execute for the first time
+    (sys:make-thread 1)
+    (sys:thread-no-wait 'spin-intervention-groupname)
+    (unix:signal *urgent-intervention-signal* 'signal-urgent-intervention)
 
-  ;; test if already installed
-  (when (ros::create-nodehandle +intervention-groupname+)
-    ;; setup UNIX signal handler
-    (unix:install-signal-handler unix::sigurg unix::sigurg-received)
-    (install-handler unix::sigurg-received 'spin-sigurg)
-    (install-handler interruption
-       #'(lambda (c)
-           ;; suppress interventions during repl evaluation
-           (handler-bind ((unix::sigurg-received #'(lambda (condition-instance) nil)))
-             ;; call default handler
-             (invoke-next-handler c))))
+    ;; generate & install default interventions
+    (define-urgent-intervention interruption-topic "roseus_resume/interrupt" std_msgs::Empty)
+    (define-urgent-intervention resume-topic "roseus_resume/resume" std_msgs::Empty)
+    (install-handler interruption-topic
+      #'(lambda (c) (signals unix::sigint-received :message "topic interrupt")))
+    (install-handler resume-topic #'(lambda (c) (signals unix::sigcont-received)))
+
     t))
 
-(defmacro defintervention (name &key topic-name (message-type std_msgs::Empty))
-  (assert (symbolp name) type-error "symbol expected")
-  (flet ((ros-name (sym)
-           (string-downcase
-            (map string #'(lambda (ch) (if (alphanumericp ch) ch #\_))
-                 (symbol-pname sym)))))
-    (let ((topic-name (or topic-name (format nil "/~A/~A" *namespace* (ros-name name)))))
-      `(progn
-         (defcondition ,name :super intervention)
-         (ros::subscribe ,topic-name ,message-type
-			 `(lambda-closure nil 0 0 (msg)
-			    (signals ,',name :ros-msg msg))
-                         :groupname +intervention-groupname+)
-         (let ((req (instance roseus_resume::RegisterInterventionRequest :init))
-               success)
-           (send req :pid ,(unix:getpid))
-           (send req :topic ,topic-name)
-           (send req :type (princ-to-string (send ,message-type :name)))
-           (setq success
-                 (send (ros::service-call "roseus_resume/register_intervention" req) :success))
-           (unless success
-             (ros::error "Failed to register intervention ~A at ~A!" ',name ,topic-name))
-           ;; return value
-           (when success ',name))))))
-
-
-;; Utility to define and organize multiple callback definitions
-
-(defclass intervention-callback)
-(defmethod intervention-callback
-  (:init (&rest cbs)
-    (dolist (cb cbs)
-      (send self :register-callback cb))
-    self)
-  (:register-callback (cb)
-    (eval
-     `(install-handler
-       ,(intern (symbol-pname cb) "ROSEUS_RESUME")
-       ',`(lambda-closure nil 0 0 (c) (send ,self ,cb (send c :ros-msg))))))))
-
-(defmacro register-callable-intervention (&rest methods)
-  "(&rest (selector lambda-list msg-type &rest body))"
+;; macros
+(defmacro defintervention (condition-name topic-name message-type &key groupname)
   `(progn
-     ;; define interventions
-     ,@(mapcar #'(lambda (m)
-                   (let ((selector (first m))
-                         (msg-type (third m)))
-                     `(defintervention ,(intern (symbol-pname selector) "ROSEUS_RESUME")
-                          :message-type ,msg-type)))
-               methods)
-     ;; define callback methods
-     (defmethod intervention-callback
-         ,@(mapcar #'(lambda (m)
-                       (let ((selector (first m))
-                             (lambda-list (second m))
-                             ;; (msg-type (third m))
-                             (body (cdddr m)))
-                         `(,selector ,lambda-list ,@body)))
-                   methods))
-     ;; initialize instance
-     (instance intervention-callback :init ,@(mapcar #'first methods))))
+     (defcondition ,condition-name :super intervention)
+     ,(if groupname
+          `(ros::subscribe ,topic-name ,message-type #'signal-intervention
+                           ,topic-name ,condition-name
+                           :groupname ,groupname)
+          `(ros::subscribe ,topic-name ,message-type #'signal-intervention
+                           ,topic-name ,condition-name))))
+
+(defmacro define-urgent-intervention (condition-name topic-name message-type)
+  `(progn
+     (defcondition ,condition-name :super intervention)
+     (ros::subscribe ,topic-name ,message-type #'urgent-intervention-cb
+                     ,topic-name ,condition-name
+                     :groupname *intervention-groupname*)))
