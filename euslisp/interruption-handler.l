@@ -21,7 +21,7 @@
   (mapcar
    #'(lambda (ac)
        ;; only interrupt active controllers
-       (when (equal (send ac :get-val "SIMPLE-STATE") ros::*simple-goal-state-active*)
+       (when (= (send ac :get-state) actionlib_msgs::GoalStatus::*active*)
          (list (send ac :name)
                (send (send ac :comm-state) :action-goal)
                (send ac :current-time))))
