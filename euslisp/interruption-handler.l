@@ -5,8 +5,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod controller-action-client
- (:action-goal ()
-  (send ros::comm-state :action-goal))
  (:current-time ()
   (cond
     ((send ri :simulation-modep)
@@ -24,7 +22,9 @@
    #'(lambda (ac)
        ;; only interrupt active controllers
        (when (equal (send ac :get-val "SIMPLE-STATE") ros::*simple-goal-state-active*)
-         (list (send ac :name) (send ac :action-goal) (send ac :current-time))))
+         (list (send ac :name)
+               (send (send ac :comm-state) :action-goal)
+               (send ac :current-time))))
    controller-actions))
  (:interrupt-angle-vector ()
   (send self :cancel-angle-vector))
