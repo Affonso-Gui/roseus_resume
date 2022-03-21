@@ -1,4 +1,5 @@
 (require :robot-interface "package://pr2eus/robot-interface.l")
+(unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CONTROLLER INTERFACE
@@ -15,6 +16,19 @@
      (ros::time- last-feedback-msg-stamp
                  (send (send ros::comm-state :action-goal) :header :stamp))))))
 
+(defclass roseus_resume::action-snapshot
+  :super propertied-object
+  :slots (ac goal time))
+(defmethod roseus_resume::action-snapshot
+  (:init (action-client)
+    (setq ac action-client)
+    (setq goal (send (send ac :comm-state) :action-goal))
+    (setq time (send ac :current-time)))
+  (:name () (send ac :name))
+  (:action-client () ac)
+  (:goal () (send goal :goal))
+  (:time () time))
+
 (defmethod robot-interface
  (:get-action-status ()
   (send self :spin-once)
@@ -22,9 +36,7 @@
    #'(lambda (ac)
        ;; only interrupt active controllers
        (when (= (send ac :get-state) actionlib_msgs::GoalStatus::*active*)
-         (list (send ac :name)
-               (send (send ac :comm-state) :action-goal)
-               (send ac :current-time))))
+         (instance roseus_resume::action-snapshot :init ac)))
    controller-actions))
  (:interrupt-angle-vector ()
   (send self :cancel-angle-vector))
@@ -59,9 +71,8 @@
 
        (dolist (s status)
          (when s
-           (let* ((name (first s))
-                  (goal (send (second s) :goal))
-                  (tm (third s))
+           (let* ((goal (send s :goal))
+                  (tm (send s :time))
                   (last-point (car (last (send goal :trajectory :points)))))
 
              ;; Remove completed steps
@@ -80,7 +91,7 @@
                            (send goal :trajectory :points)))
 
              ;; Update offset
-             (update-offset (actual-positions name)
+             (update-offset (actual-positions (send s :name))
                             (map cons #'cons
                                  (send goal :trajectory :joint_names)
                                  (send (car (send goal :trajectory :points)) :positions))))))
@@ -91,7 +102,7 @@
        (mapc #'(lambda (s ac)
                  (when s
                    (let ((action-goal (send ac :make-goal-instance))
-                         (goal (send (second s) :goal))
+                         (goal (send s :goal))
                          (tm (ros::time-now)))
 
                      ;; Shift based on time offset
@@ -120,7 +131,6 @@
 ;; PACKAGE DEFINITION
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-(unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
