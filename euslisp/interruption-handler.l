@@ -99,28 +99,28 @@
        ;; Check min-time
        (setq offset (max offset min-time))
 
-       (mapc #'(lambda (s ac)
-                 (when s
-                   (let ((action-goal (send ac :make-goal-instance))
-                         (goal (send s :goal))
-                         (tm (ros::time-now)))
+       (dolist (s status)
+         (when s
+           (let* ((ac (send s :action-client))
+                  (action-goal (send ac :make-goal-instance))
+                  (goal (send s :goal))
+                  (tm (ros::time-now)))
 
-                     ;; Shift based on time offset
-                     (send goal :trajectory :points
-                           (mapcar #'(lambda (p) (offset-point p offset))
-                                   (send goal :trajectory :points)))
+             ;; Shift based on time offset
+             (send goal :trajectory :points
+                   (mapcar #'(lambda (p) (offset-point p offset))
+                           (send goal :trajectory :points)))
 
-                     ;; Prepare message
-                     (send action-goal :header :stamp tm)
-                     (send action-goal :header :seq 1)
-                     (send action-goal :goal :trajectory (send goal :trajectory))
-                     (send action-goal :goal :trajectory :header :stamp tm)
-                     (send action-goal :goal :trajectory :header :seq 1)
+             ;; Prepare message
+             (send action-goal :header :stamp tm)
+             (send action-goal :header :seq 1)
+             (send action-goal :goal :trajectory (send goal :trajectory))
+             (send action-goal :goal :trajectory :header :stamp tm)
+             (send action-goal :goal :trajectory :header :seq 1)
 
-                     ;; Send goal to controller
-                     (send self :spin-once)
-                     (send ac :send-goal action-goal))))
-             status controller-actions)
+             ;; Send goal to controller
+             (send self :spin-once)
+             (send ac :send-goal action-goal))))
 
        ;; Wait offset before resuming
        (unix:usleep (truncate (* offset 1000000)))
