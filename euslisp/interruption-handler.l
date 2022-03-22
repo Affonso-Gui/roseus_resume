@@ -5,6 +5,15 @@
 ;; CONTROLLER INTERFACE
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defmethod ros::simple-action-client
+ (:current-time ()
+  (cond
+    ((null (send ros::comm-state :action-goal))
+     (ros::time 0))
+    (t
+     (ros::time- (ros::time-now)
+                 (send (send ros::comm-state :action-goal) :header :stamp))))))
+
 (defmethod controller-action-client
  (:current-time ()
   (cond
@@ -13,12 +22,16 @@
     ((null (send ros::comm-state :action-goal))
      (ros::time 0))
     (t
+     ;; use time measured from last feedback instead
      (ros::time- last-feedback-msg-stamp
                  (send (send ros::comm-state :action-goal) :header :stamp))))))
+
 
 (defclass roseus_resume::action-snapshot
   :super propertied-object
   :slots (ac goal time))
+(defclass roseus_resume::controller-action-snapshot
+    :super roseus_resume::action-snapshot)
 (defmethod roseus_resume::action-snapshot
   (:init (action-client)
     (setq ac action-client)
@@ -32,19 +45,34 @@
 (defmethod robot-interface
  (:get-action-status ()
   (send self :spin-once)
-  (mapcar
-   #'(lambda (ac)
-       ;; only interrupt active controllers
-       (when (= (send ac :get-state) actionlib_msgs::GoalStatus::*active*)
-         (instance roseus_resume::action-snapshot :init ac)))
-   controller-actions))
+  (let (acc)
+    (labels ((check-active (ac)
+               (= (send ac :get-state) actionlib_msgs::GoalStatus::*active*)))
+      (dolist (ac controller-actions)
+        ;; only interrupt active controllers
+        (when (check-active ac)
+          (push (instance roseus_resume::controller-action-snapshot :init ac) acc)))
+      (dolist (ac (get self :additional-controllers))
+        ;; only interrupt active controllers
+        (when (check-active ac)
+          (push (instance roseus_resume::action-snapshot :init ac) acc)))
+      (nreverse acc))))
  (:interrupt-angle-vector ()
-  (send self :cancel-angle-vector))
+  (send self :cancel-angle-vector)
+  (dolist (ac (get self :additional-controllers))
+    (when (send (send ac :comm-state) :action-goal)
+      (send ac :cancel-goal))))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
    (unless (some #'identity status)
      (return-from :resume-angle-vector nil))
    (send *ri* :spin-once) ;; update joint positions
-   (let ((offset 0.0))
+   (let ((offset 0.0)
+         (controller-action-status
+          (remove-if-not #'(lambda (val) (derivedp val roseus_resume::controller-action-snapshot))
+                         status))
+         (simple-action-status
+          (remove-if #'(lambda (val) (derivedp val roseus_resume::controller-action-snapshot))
+                     status)))
      (labels
          ((offset-point (point tm)
             (send point :time_from_start (ros::time+ (send point :time_from_start) (ros::time tm)))
@@ -69,61 +97,66 @@
                      (off (* scale (/ diff (send joint :max-joint-velocity)))))
                 (if (> off offset) (setq offset off))))))
 
-       (dolist (s status)
-         (when s
-           (let* ((goal (send s :goal))
-                  (tm (send s :time))
-                  (last-point (car (last (send goal :trajectory :points)))))
+       (dolist (s controller-action-status)
+         (let* ((goal (send s :goal))
+                (tm (send s :time))
+                (last-point (car (last (send goal :trajectory :points)))))
 
-             ;; Remove completed steps
-             (send goal :trajectory :points
-                   (remove-if #'(lambda (p) (ros::time< (send p :time_from_start) tm))
-                              (send goal :trajectory :points)))
+           ;; Remove completed steps
+           (send goal :trajectory :points
+                 (remove-if #'(lambda (p) (ros::time< (send p :time_from_start) tm))
+                            (send goal :trajectory :points)))
 
-             ;; Ensure last waypoint
-             (unless (send goal :trajectory :points)
-               (send last-point :time_from_start tm)
-               (send goal :trajectory :points (list last-point)))
+           ;; Ensure last waypoint
+           (unless (send goal :trajectory :points)
+             (send last-point :time_from_start tm)
+             (send goal :trajectory :points (list last-point)))
 
-             ;; Shift based on time_from_start
-             (send goal :trajectory :points
-                   (mapcar #'(lambda (p) (offset-point p (- (send tm :to-sec))))
-                           (send goal :trajectory :points)))
+           ;; Shift based on time_from_start
+           (send goal :trajectory :points
+                 (mapcar #'(lambda (p) (offset-point p (- (send tm :to-sec))))
+                         (send goal :trajectory :points)))
 
-             ;; Update offset
-             (update-offset (actual-positions (send s :name))
-                            (map cons #'cons
-                                 (send goal :trajectory :joint_names)
-                                 (send (car (send goal :trajectory :points)) :positions))))))
+           ;; Update offset
+           (update-offset (actual-positions (send s :name))
+                          (map cons #'cons
+                               (send goal :trajectory :joint_names)
+                               (send (car (send goal :trajectory :points)) :positions)))))
 
        ;; Check min-time
        (setq offset (max offset min-time))
 
+       ;; Shift based on time offset
+       (dolist (s controller-action-status)
+         (let ((goal (send s :goal)))
+           (send goal :trajectory :points
+                 (mapcar #'(lambda (p) (offset-point p offset))
+                         (send goal :trajectory :points)))))
+
+       ;; Send commands
        (dolist (s status)
-         (when s
-           (let* ((ac (send s :action-client))
-                  (action-goal (send ac :make-goal-instance))
-                  (goal (send s :goal))
-                  (tm (ros::time-now)))
+         (let* ((ac (send s :action-client))
+                (action-goal (send ac :make-goal-instance))
+                (goal (send s :goal))
+                (tm (ros::time-now)))
 
-             ;; Shift based on time offset
-             (send goal :trajectory :points
-                   (mapcar #'(lambda (p) (offset-point p offset))
-                           (send goal :trajectory :points)))
+           ;; Prepare message
+           (send action-goal :header :stamp tm)
+           (send action-goal :header :seq 1)
+           (if (derivedp s roseus_resume::controller-action-snapshot)
+               (progn
+                 (send action-goal :goal :trajectory (send goal :trajectory))
+                 (send action-goal :goal :trajectory :header :stamp tm)
+                 (send action-goal :goal :trajectory :header :seq 1))
+               (send action-goal :goal goal))
 
-             ;; Prepare message
-             (send action-goal :header :stamp tm)
-             (send action-goal :header :seq 1)
-             (send action-goal :goal :trajectory (send goal :trajectory))
-             (send action-goal :goal :trajectory :header :stamp tm)
-             (send action-goal :goal :trajectory :header :seq 1)
-
-             ;; Send goal to controller
-             (send self :spin-once)
-             (send ac :send-goal action-goal))))
+           ;; Send goal to controller
+           (send self :spin-once)
+           (send ac :send-goal action-goal)))
 
        ;; Wait offset before resuming
-       (unix:usleep (truncate (* offset 1000000)))
+       (when controller-action-status
+         (unix:usleep (truncate (* offset 1000000))))
        t))))
 
 
@@ -156,7 +189,7 @@
              (handler-case (send ,robot-interface :get-action-status)
                ;; ensure interruption even upon error
                (error (e) (signals on-interruption :status nil)
-                      (signals e)))))
+                      (euserror e)))))
         (ros::ros-info ";; action-status: ~A" action-status)
         (ros::ros-info ";; on-interruption...")
         (signals on-interruption :status action-status)
@@ -167,9 +200,17 @@
         (signals on-resume :status action-status)))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface)
+(defmacro install-interruption-handler (robot-interface &rest additional-controllers)
   `(block install-interruption-handler
-
+     ;; store additional controllers
+     ;; TODO: is it ok to overwrite it every time?
+     (setf (get ,robot-interface :additional-controllers)
+           (mapcar #'(lambda (val)
+                       (let ((res (send ,robot-interface :get-val val)))
+                         (assert (derivedp res ros::simple-action-client)
+                                 "additional controllers must be derived from ros::simple-action-client class")
+                         res))
+                   ',additional-controllers))
      ;; generate & install interruption handlers
      (generate-interruption-handler-with-controller-interrupt ,robot-interface)
      (install-handler interruption 'interruption-handler-with-controller-interrupt)

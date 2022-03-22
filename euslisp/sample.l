@@ -9,6 +9,9 @@
 ;; (use-package "ROSEUS_RESUME")
 ;; (setq roseus_resume::*namespace* "my_namespace")
 (roseus_resume:install-interruption-handler *ri*)
+;; enable interruption of other controllers
+;; (roseus_resume:install-interruption-handler
+;;  *ri* r-gripper-action l-gripper-action move-base-action move-base-trajectory-action)
 
 #||
 Installing the interruption handler overwrites sigint (C-c) behavior
