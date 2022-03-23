@@ -204,13 +204,14 @@
   `(block install-interruption-handler
      ;; store additional controllers
      ;; TODO: is it ok to overwrite it every time?
-     (setf (get ,robot-interface :additional-controllers)
-           (mapcar #'(lambda (val)
-                       (let ((res (send ,robot-interface :get-val val)))
-                         (assert (derivedp res ros::simple-action-client)
-                                 "additional controllers must be derived from ros::simple-action-client class")
-                         res))
-                   ',additional-controllers))
+     (unless (send ,robot-interface :simulation-modep)
+       (setf (get ,robot-interface :additional-controllers)
+             (mapcar #'(lambda (val)
+                         (let ((res (send ,robot-interface :get-val val)))
+                           (assert (derivedp res ros::simple-action-client)
+                                   "additional controllers must be derived from ros::simple-action-client class")
+                           res))
+                     ',additional-controllers)))
      ;; generate & install interruption handlers
      (generate-interruption-handler-with-controller-interrupt ,robot-interface)
      (install-handler interruption 'interruption-handler-with-controller-interrupt)
