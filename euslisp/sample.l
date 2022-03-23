@@ -23,14 +23,19 @@ to send the following three signals:
     default_callback: creates a new REPL
 - `roseus_resume:on_resume'
     default_callback: (send *ri* :resume-angle-vector)
-
-It also subscribes the ROS topics `/roseus_resume/interrupt' and `/roseus_resume/resume',
-which send sigint and sigcont to the EusLisp process.
 ||#
 
 
 ;; Overwrite default interruption behavior
 (install-handler roseus_resume:on-interruption #'(lambda (c) (send *ri* :stop-motion)))
+
+#||
+Installing interventions subscribes the ROS topics
+`/roseus_resume/interrupt' and `/roseus_resume/resume',
+which send sigint and sigcont to the EusLisp process.
+||#
+
+(roseus_resume:install-intervention-framework)
 
 ;; Register custom interventions
 
@@ -38,33 +43,30 @@ which send sigint and sigcont to the EusLisp process.
 ;; and defines an intervention condition `roseus_resume::speak-message',
 ;; which is signalized every time a message arrives on the topic
 (roseus_resume:defintervention roseus_resume::speak-message
-    :message-type std_msgs::String
-    :topic-name "roseus_resume/speak")
+    "roseus_resume/speak" std_msgs::String)
 
 ;; The ROS message is stored in the intervention condition class
 ;; and can be accessed through the method `:ros-msg'
-;; Setting `:recursive' to nil avoid that the same handler is called again
-;; if the topic is published one more time during execution
+;; The default behavior is to recall the handler whenever a new message arrives, so
+;; local handler bindings should be used to avoid recalling the handler during execution
 (install-handler roseus_resume::speak-message
-  #'(lambda (c) (send *ri* :speak (send (send c :ros-msg) :data) :wait t))
-  :recursive nil)
+  #'(lambda (c)
+      (handler-bind ((roseus_resume::speak-message
+                      #'(lambda (c) (ros::ros-info "Ignoring: ~A" c))))
+        (send *ri* :speak (send (send c :ros-msg) :data) :wait t))))
 
-;; Utility to define multiple intervention callbacks
-(defparameter intervention-instance
-  (roseus_resume:register-callable-intervention
-   ;; Stop action, speak, and then resume the action
-   (:stop-speak (msg) std_msgs::String
-     (let ((action-status (send *ri* :get-action-status)))
-       (send *ri* :stop-motion)
-       (send *ri* :speak (send msg :data) :wait t)
-       (send *ri* :resume-angle-vector action-status)))
-   ;; Same as `stop-speak', but incorporating the interruption logic
-   (:welcome (&optional msg) std_msgs::Empty
-     (handler-bind ((roseus_resume:on-standby
-                     #'(lambda (c) (send *ri* :speak "Welcome to JSK" :wait t))))
-       (signals interruption)))))
+;; An urgent intervention is always monitored on another thread,
+;; so the signal handler is dispatched at all conditions, even during idle REPL
+(roseus_resume:define-urgent-intervention roseus_resume::speak-message
+    "roseus_resume/speak_urgent" std_msgs::String)
+
 
 ;; Register speech recognition interventions
 (load "package://roseus_resume/euslisp/speech-recognition-intervention.l")
+(roseus_resume:install-speech-intervention :groupname (*ri* . groupname))
+
 (roseus_resume:register-speech-intervention "hello"
-  (send intervention-instance :welcome))
+  (let ((action-status (send *ri* :get-action-status)))
+    (send *ri* :stop-motion)
+    (send *ri* :speak "Greetings, human." :wait t)
+    (send *ri* :resume-angle-vector action-status)))

@@ -3,10 +3,11 @@
 (unless (find-package "ROSEUS_RESUME")
   (load "package://roseus_resume/euslisp/interruption-handler.l"))
 (in-package "ROSEUS_RESUME")
-(export '(register-speech-intervention unregister-speech-intervention))
+(export '(install-speech-intervention
+          register-speech-intervention unregister-speech-intervention))
 
 (defparameter *speech-intervention-alist*
-  '(("stop" . (lambda-closure nil 0 0 nil (signals interruption-event)))
+  '(("stop" . (lambda-closure nil 0 0 nil (signals interruption)))
     ("continue" . (lambda-closure nil 0 0 nil (reset *replevel*)))))
 
 (defun speech-recognition-callback (texts)
@@ -14,11 +15,12 @@
     (let ((match (assoc txt *speech-intervention-alist* :test #'string-equal)))
       (if match (funcall (cdr match))))))
 
-(defintervention speech-recognition-intervention 
-    :topic-name "Tablet/voice"
-    :message-type jsk_gui_msgs::VoiceMessage)
-(install-handler speech-recognition-intervention 
-  '(lambda-closure nil 0 0 (c) (speech-recognition-callback (send (send c :ros-msg) :texts))))
+(defun install-speech-intervention (&key (topic-name "Tablet/voice") groupname)
+  (defintervention speech-recognition-intervention
+      topic-name jsk_gui_msgs::VoiceMessage :groupname groupname)
+  (install-handler speech-recognition-intervention 
+                   '(lambda-closure nil 0 0 (c) (speech-recognition-callback (send (send c :ros-msg) :texts))))
+  t)
 
 (defmacro register-speech-intervention (word &rest body)
   `(setq *speech-intervention-alist*
