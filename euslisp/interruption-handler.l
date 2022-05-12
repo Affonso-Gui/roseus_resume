@@ -237,7 +237,9 @@
 ;; utility
 (defun signal-intervention (topic-name condition-name msg)
   (ros::ros-info ";; intervention message received at ~A" topic-name)
-  (signals condition-name :ros-msg msg))
+  (if (derivedp (instance condition-name) intervention)
+      (signals condition-name :ros-msg msg)
+      (signals condition-name)))
 
 (defun urgent-intervention-cb (topic-name condition-name msg)
   (ros::ros-info ";; urgent intervention message received at ~A" topic-name)
@@ -276,7 +278,10 @@
 ;; macros
 (defmacro defintervention (condition-name topic-name message-type &key groupname)
   `(progn
-     (defcondition ,condition-name :super intervention)
+     (unless (boundp ',condition-name)
+       (defcondition ,condition-name :super intervention))
+     (unless (and (classp ,condition-name) (derivedp (instance ,condition-name) condition))
+       (error value-error "condition class expected in ~A(~S)" ',condition-name ,condition-name))
      ,(if groupname
           `(ros::subscribe ,topic-name ,message-type #'signal-intervention
                            ,topic-name ,condition-name
