@@ -205,13 +205,15 @@
      ;; store additional controllers
      ;; TODO: is it ok to overwrite it every time?
      (unless (send ,robot-interface :simulation-modep)
-       (setf (get ,robot-interface :additional-controllers)
-             (mapcar #'(lambda (val)
-                         (let ((res (send ,robot-interface :get-val val)))
-                           (assert (derivedp res ros::simple-action-client)
-                                   "additional controllers must be derived from ros::simple-action-client class")
-                           res))
-                     ',additional-controllers)))
+       (let (acc)
+         (dolist (val ',additional-controllers)
+           (let ((res (send ,robot-interface :get-val val)))
+             (if (derivedp res ros::simple-action-client)
+                 (push res acc)
+                 (progn
+                   (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" val)
+                   (ros::ros-warn "Skipping ~S..." val)))))
+         (setf (get ,robot-interface :additional-controllers) (nreverse acc))))
      ;; generate & install interruption handlers
      (generate-interruption-handler-with-controller-interrupt ,robot-interface)
      (install-handler interruption 'interruption-handler-with-controller-interrupt)
