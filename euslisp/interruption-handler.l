@@ -266,11 +266,20 @@
                                        (resume-topic "/roseus_resume/resume"))
   (when (ros::create-nodehandle *default-intervention-groupname*)
     ;; only execute for the first time
-    (setq *top-selector-interval* 0.2)
-    (setq *timer-job* (cons #'(lambda () (ros::spin-once *default-intervention-groupname*))
-                            *timer-job*)))
+    (if (or (not (eq (class *standard-input*) file-stream))
+            (unix:isatty *standard-input*))
+        ;; check for resumptions as a timer-job if process is atty
+        (progn
+          (setq *top-selector-interval* 0.2)
+          (setq *timer-job* (cons #'(lambda () (ros::spin-once *default-intervention-groupname*))
+                                  *timer-job*)))
+        ;; check for resumptions in a custom handler if process is not atty
+        (install-handler interruption
+            #'(lambda (c)
+                (lisp::print-error-message c)
+                (ros::spin *default-intervention-groupname*)))))
 
-  ;; spin interruptions on the robot and resumptions as a timer-job
+  ;; spin interruptions on the robot and resumptions as a timer-job or handler
   (defintervention interruption interrupt-topic std_msgs::Empty
                    :groupname (send robot-interface :get-val "GROUPNAME"))
   (defintervention unix::sigcont-received resume-topic std_msgs::Empty
