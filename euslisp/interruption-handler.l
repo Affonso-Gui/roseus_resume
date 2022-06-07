@@ -168,7 +168,7 @@
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
           intervention defintervention define-urgent-intervention
-          install-urgent-intervention-framework))
+          install-default-intervention install-urgent-intervention-framework))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -232,6 +232,7 @@
 
 (defcondition intervention :slots (ros-msg))
 (defvar *intervention-groupname* "roseus_resume.intervention")
+(defvar *default-intervention-groupname* "roseus_resume.default_intervention")
 (defvar *urgent-intervention-signal* unix::sigurg)
 (defvar *monitor-interventions* t)
 (defvar *synch-port* (instance sys:synch-memory-port :init))
@@ -260,6 +261,22 @@
   (ros::ros-warn ";; stop checking for intervention messages..."))
 
 ;; installer
+(defun install-default-intervention (robot-interface &key
+                                       (interrupt-topic "/roseus_resume/interrupt")
+                                       (resume-topic "/roseus_resume/resume"))
+  (when (ros::create-nodehandle *default-intervention-groupname*)
+    ;; only execute for the first time
+    (setq *top-selector-interval* 0.2)
+    (setq *timer-job* (cons #'(lambda () (ros::spin-once *default-intervention-groupname*))
+                            *timer-job*)))
+
+  ;; spin interruptions on the robot and resumptions as a timer-job
+  (defintervention interruption interrupt-topic std_msgs::Empty
+                   :groupname (send robot-interface :get-val "GROUPNAME"))
+  (defintervention unix::sigcont-received resume-topic std_msgs::Empty
+                   :groupname *default-intervention-groupname*)
+  t)
+
 (defun install-urgent-intervention-framework ()
   ;; Dispatch unix signals when a topic message is received,
   ;; ensuring immediate interruption at any execution point
