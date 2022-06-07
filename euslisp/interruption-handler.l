@@ -168,7 +168,7 @@
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
           intervention defintervention define-urgent-intervention
-          install-intervention-framework))
+          install-urgent-intervention-framework))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -260,10 +260,13 @@
   (ros::ros-warn ";; stop checking for intervention messages..."))
 
 ;; installer
-(defun install-intervention-framework ()
-  ;; create and spin nodehandle in a new thread
+(defun install-urgent-intervention-framework ()
+  ;; Dispatch unix signals when a topic message is received,
+  ;; ensuring immediate interruption at any execution point
   (when (ros::create-nodehandle *intervention-groupname*)
+    ;; create and spin nodehandle in a new thread
     ;; only execute for the first time
+    (warn ";; Urgent interventions are experimental! Handle with care~%")
     (sys:make-thread 1)
     (sys:thread-no-wait 'spin-intervention-groupname)
     (unix:signal *urgent-intervention-signal* 'signal-urgent-intervention)

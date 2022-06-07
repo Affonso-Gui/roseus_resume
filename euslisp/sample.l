@@ -30,12 +30,12 @@ to send the following three signals:
 (install-handler roseus_resume:on-interruption #'(lambda (c) (send *ri* :stop-motion)))
 
 #||
-Installing interventions subscribes the ROS topics
+Installing urgent interventions subscribes the ROS topics
 `/roseus_resume/interrupt' and `/roseus_resume/resume',
 which send sigint and sigcont to the EusLisp process.
 ||#
 
-(roseus_resume:install-intervention-framework)
+(roseus_resume:install-urgent-intervention-framework)
 
 ;; Register custom interventions
 
