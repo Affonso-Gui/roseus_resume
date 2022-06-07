@@ -277,7 +277,13 @@
         (install-handler interruption
             #'(lambda (c)
                 (lisp::print-error-message c)
-                (ros::spin *default-intervention-groupname*)))))
+                (ros::ros-info "Process interrupted by user. Send a message to ~A to continue"
+                               resume-topic)
+                (handler-case
+                    (while (ros::ok)
+                      (ros::spin-once *default-intervention-groupname*)
+                      (ros::sleep))
+                  (unix::sigcont-received () ))))))
 
   ;; spin interruptions on the robot and resumptions as a timer-job or handler
   (defintervention interruption interrupt-topic std_msgs::Empty
