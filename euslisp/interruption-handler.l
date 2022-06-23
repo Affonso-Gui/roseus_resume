@@ -181,51 +181,50 @@
 (defcondition on-resume :slots (status))
 
 ;; define callback
-(defmacro generate-interruption-handler-with-controller-interrupt (robot-interface)
+(defun generate-interruption-handler-with-controller-interrupt (ri)
   ;; compile handler to keep the top-level env during the interruption repl
-  `(compile
-    (defun interruption-handler-with-controller-interrupt (c)
-      (let ((action-status
-             (handler-case (send ,robot-interface :get-action-status)
-               ;; ensure interruption even upon error
-               (error (e) (signals on-interruption :status nil)
-                      (euserror e)))))
-        (ros::ros-info ";; action-status: ~A" action-status)
-        (ros::ros-info ";; on-interruption...")
-        (signals on-interruption :status action-status)
-        (ros::ros-info ";; on-standby...")
-        (signals on-standby :status action-status
-                 :interruption-instance c)
-        (ros::ros-info ";; on-resume...")
-        (signals on-resume :status action-status)))))
+  (compile
+   (eval
+    `(defun interruption-handler-with-controller-interrupt (c)
+       (let ((action-status
+              (handler-case (send ,ri :get-action-status)
+                ;; ensure interruption even upon error
+                (error (e) (signals on-interruption :status nil)
+                       (euserror e)))))
+         (ros::ros-info ";; action-status: ~A" action-status)
+         (ros::ros-info ";; on-interruption...")
+         (signals on-interruption :status action-status)
+         (ros::ros-info ";; on-standby...")
+         (signals on-standby :status action-status
+                  :interruption-instance c)
+         (ros::ros-info ";; on-resume...")
+         (signals on-resume :status action-status))))))
 
 ;; install callback
-(defmacro install-interruption-handler (robot-interface &rest additional-controllers)
-  `(block install-interruption-handler
-     ;; store additional controllers
-     ;; TODO: is it ok to overwrite it every time?
-     (unless (send ,robot-interface :simulation-modep)
-       (let (acc)
-         (dolist (val ',additional-controllers)
-           (let ((res (send ,robot-interface :get-val val)))
-             (if (derivedp res ros::simple-action-client)
-                 (push res acc)
-                 (progn
-                   (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" val)
-                   (ros::ros-warn "Skipping ~S..." val)))))
-         (setf (get ,robot-interface :additional-controllers) (nreverse acc))))
-     ;; generate & install interruption handlers
-     (ros::ros-info "Installing interruption handler...")
-     (generate-interruption-handler-with-controller-interrupt ,robot-interface)
-     (install-handler interruption 'interruption-handler-with-controller-interrupt)
-     (install-handler on-interruption
-                      #'(lambda (c) (send ,robot-interface :interrupt-angle-vector)))
-     (install-handler on-standby
-                      #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
-     (install-handler on-resume
-                      #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
-     (ros::ros-info "...done.")
-     t))
+(defun install-interruption-handler (ri &rest additional-controllers)
+  ;; store additional controllers
+  ;; TODO: is it ok to overwrite it every time?
+  (unless (send ri :simulation-modep)
+    (let (acc)
+      (dolist (controller additional-controllers)
+        (if (derivedp controller ros::simple-action-client)
+            (push controller acc)
+            (progn
+              (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" val)
+              (ros::ros-warn "Skipping ~S..." controller))))
+      (setf (get ri :additional-controllers) (nreverse acc))))
+  ;; generate & install interruption handlers
+  (ros::ros-info "Installing interruption handler...")
+  (generate-interruption-handler-with-controller-interrupt ri)
+  (install-handler interruption 'interruption-handler-with-controller-interrupt)
+  (install-handler on-interruption
+                   #'(lambda (c) (send ri :interrupt-angle-vector)))
+  (install-handler on-standby
+                   #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
+  (install-handler on-resume
+                   #'(lambda (c) (send ri :resume-angle-vector (send c :status))))
+  (ros::ros-info "...done.")
+  t)
 
 
 ;;;;;;;;;;;;;;;;;

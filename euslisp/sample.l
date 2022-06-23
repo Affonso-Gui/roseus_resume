@@ -11,7 +11,7 @@
 (roseus_resume:install-interruption-handler *ri*)
 ;; enable interruption of other controllers
 ;; (roseus_resume:install-interruption-handler
-;;  *ri* r-gripper-action l-gripper-action move-base-action move-base-trajectory-action)
+;;  *ri* (*ri* . r-gripper-action) (*ri* . l-gripper-action) (*ri* . move-base-action) (*ri* . move-base-trajectory-action))
 
 #||
 Installing the interruption handler overwrites sigint (C-c) behavior
