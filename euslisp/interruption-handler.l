@@ -215,6 +215,7 @@
                    (ros::ros-warn "Skipping ~S..." val)))))
          (setf (get ,robot-interface :additional-controllers) (nreverse acc))))
      ;; generate & install interruption handlers
+     (ros::ros-info "Installing interruption handler...")
      (generate-interruption-handler-with-controller-interrupt ,robot-interface)
      (install-handler interruption 'interruption-handler-with-controller-interrupt)
      (install-handler on-interruption
@@ -223,6 +224,7 @@
                       #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
      (install-handler on-resume
                       #'(lambda (c) (send ,robot-interface :resume-angle-vector (send c :status))))
+     (ros::ros-info "...done.")
      t))
 
 
