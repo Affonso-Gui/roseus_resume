@@ -210,7 +210,7 @@
         (if (derivedp controller ros::simple-action-client)
             (push controller acc)
             (progn
-              (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" val)
+              (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" controller)
               (ros::ros-warn "Skipping ~S..." controller))))
       (setf (get ri :additional-controllers) (nreverse acc))))
   ;; generate & install interruption handlers
