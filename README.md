@@ -21,13 +21,13 @@ cd euslisp/Euslisp/
 # checkout euslisp/eus-handler
 git remote add Affonso-Gui https://github.com/Affonso-Gui/EusLisp.git
 git fetch Affonso-Gui 
-git checkout eus-handler
+git checkout eus10
 
 # checkout roseus/eus-handler
 cd ~/roseus_resume_ws/src/jsk-ros-pkg/jsk_roseus/
 git remote add Affonso-Gui https://github.com/Affonso-Gui/jsk_roseus.git
 git fetch Affonso-Gui 
-git checkout eus-handler 
+git checkout eus10
 cd ~/roseus_resume_ws/src/
 
 # clone roseus_resume
