@@ -1,7 +1,7 @@
 ## roseus_resume
 
 ### Setup
-You will need to install `euslisp` and `roseus` from source and set them to the `eus_handler` branch.
+You will need to install `euslisp` and `roseus` from source and set them to the `eus10` branch.
 
 The following will guide you through this:
 
@@ -9,35 +9,23 @@ The following will guide you through this:
 mkdir ~/roseus_resume_ws/src -p
 cd ~/roseus_resume_ws/src/
 
-# clone euslisp
-wstool init
+# clone
+wstool init .
+wstool merge -t . https://gist.githubusercontent.com/Affonso-Gui/25518fef9dc7af0051147bdd2a94b116/raw/e3fcbf4027c876329801a25e32f4a4746200ddae/guiga_system.rosinstall
+wstool update -t .
+
+# To use eus10, furuschev script is required.
 wget https://raw.githubusercontent.com/jsk-ros-pkg/jsk_roseus/master/setup_upstream.sh -O /tmp/setup_upstream.sh
-bash /tmp/setup_upstream.sh -w ..
+bash /tmp/setup_upstream.sh -w ../ -p jsk-ros-pkg/geneus -p euslisp/jskeus
 
-# clone roseus
-wstool set jsk-ros-pkg/jsk_roseus --git https://github.com/jsk-ros-pkg/jsk_roseus.git -v master -u -y
-cd euslisp/Euslisp/
-
-# checkout euslisp/eus-handler
-git remote add Affonso-Gui https://github.com/Affonso-Gui/EusLisp.git
-git fetch Affonso-Gui 
-git checkout eus10
-
-# checkout roseus/eus-handler
-cd ~/roseus_resume_ws/src/jsk-ros-pkg/jsk_roseus/
-git remote add Affonso-Gui https://github.com/Affonso-Gui/jsk_roseus.git
-git fetch Affonso-Gui 
-git checkout eus10
-cd ~/roseus_resume_ws/src/
-
-# clone roseus_resume
-git clone https://github.com/Affonso-Gui/roseus_resume.git
-cd ~/roseus_resume_ws/
+# install dependencies
+rosdep install -y -r --from-paths . --ignore-src
 
 # build
-catkin build
+cd ../
+catkin build roseus_resume pr2eus
 ```
 
 ### Usage
 
-Commented example usage is given at [sample.l](https://github.com/Affonso-Gui/roseus_resume/blob/master/euslisp/sample.l).
+Commented example usage is given at [sample.l](https://github.com/Affonso-Gui/roseus_resume/blob/eus10/euslisp/sample.l).
