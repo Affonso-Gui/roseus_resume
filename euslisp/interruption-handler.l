@@ -65,7 +65,7 @@
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
    (unless (some #'identity status)
      (return-from :resume-angle-vector nil))
-   (send *ri* :spin-once) ;; update joint positions
+   (send self :spin-once) ;; update joint positions
    (let ((offset 0.0)
          (controller-action-status
           (remove-if-not #'(lambda (val) (derivedp val roseus_resume::controller-action-snapshot))
