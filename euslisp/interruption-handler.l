@@ -282,17 +282,23 @@
     (ros::sleep))
   (ros::ros-warn ";; stop checking for intervention messages..."))
 
-;; installer
+;; default intervention installer
 (defun install-default-intervention (robot-interface &key
                                        (interrupt-topic "/roseus_resume/interrupt")
-                                       (resume-topic "/roseus_resume/resume"))
+                                       (resume-topic "/roseus_resume/resume")
+                                       (top-selector-interval))
+  ;; Spin topics as a timer-job, meaning that they are only invoked during idle time.
+  ;; For interrupting actions during their execution, try registering interventions
+  ;; directly to the robot-interface's groupname `(*ri* . groupname)`, or using
+  ;; the `install-urgent-intervention-framework' instead
   (when (ros::create-nodehandle *default-intervention-groupname*)
     ;; only execute for the first time
     (if (or (not (eq (class *standard-input*) file-stream))
             (unix:isatty *standard-input*))
         ;; check for resumptions as a timer-job if process is atty
         (progn
-          (setq *top-selector-interval* 0.2)
+          (if top-selector-interval
+            (setq *top-selector-interval* top-selector-interval))
           (setq *timer-job* (cons #'(lambda () (ros::spin-once *default-intervention-groupname*))
                                   *timer-job*)))
         ;; check for resumptions in a custom handler if process is not atty
