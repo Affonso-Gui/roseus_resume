@@ -1,4 +1,7 @@
-(require :robot-interface "package://pr2eus/robot-interface.l")
+;; ;; don't explicitly load to avoid introducing cyclic dependencies
+;; ;; instead, let if fail when robot-interface has not been loaded
+;; (require :robot-interface "package://pr2eus/robot-interface.l")
+
 (unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
