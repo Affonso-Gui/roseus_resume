@@ -74,11 +74,13 @@
         (when (check-active ac)
           (push (make-action-snapshot ac) acc)))
       (nreverse acc))))
- (:interrupt-angle-vector ()
+ (:interrupt-angle-vector (&optional status)
   (send self :cancel-angle-vector)
-  (dolist (ac (get self :additional-controllers))
-    (when (send (send ac :comm-state) :action-goal)
-      (send ac :cancel-goal))))
+  ;; `controller-actions' are stopped with cancel-angle-vector
+  ;; stop other actions by directly sending a cancel request
+  (dolist (snapshot
+            (remove-if #'(lambda (s) (find (send s :action-client) controller-actions)) status))
+    (send (send snapshot :action-client) :cancel-goal)))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
    (unless (some #'identity status)
      (return-from :resume-angle-vector nil))
@@ -235,7 +237,7 @@
   (generate-interruption-handler-with-controller-interrupt ri)
   (install-handler interruption 'interruption-handler-with-controller-interrupt)
   (install-handler on-interruption
-                   #'(lambda (c) (send ri :interrupt-angle-vector)))
+                   #'(lambda (c) (send ri :interrupt-angle-vector (send c :status))))
   (install-handler on-standby
                    #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
   (install-handler on-resume
