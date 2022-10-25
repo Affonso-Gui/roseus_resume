@@ -226,13 +226,13 @@
     (dolist (controller additional-controllers)
       (if (derivedp controller ros::simple-action-client)
           (progn
-            (ros::ros-warn "Registering additional controller: ~S" controller)
+            (ros::ros-info "Registering additional controller: ~S" controller)
             (push controller acc))
           (progn
             (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" controller)
             (ros::ros-warn "Skipping ~S..." controller))))
     (setf (get ri :additional-controllers)
-          (append (get ri :additional-controllers) (nreverse acc))))
+          (remove-duplicates (append (get ri :additional-controllers) (nreverse acc)))))
   ;; generate & install interruption handlers
   (unless (fboundp 'interruption-handler-with-controller-interrupt)
     (ros::ros-info "Installing interruption handler...")
@@ -244,8 +244,8 @@
                      #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
     (install-handler on-resume
                      #'(lambda (c) (send ri :resume-angle-vector (send c :status))))
-    (ros::ros-info "...done."))
-  t)
+    (ros::ros-info "Interruption handler installed.")
+    t))
 
 
 ;;;;;;;;;;;;;;;;;
