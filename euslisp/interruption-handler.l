@@ -18,7 +18,7 @@
  (:current-time ()
   (cond
     ((send ri :simulation-modep)
-     (ros::time (/ current-time 1000.0)))
+     (ros::time (/ (or current-time 0.0) 1000.0)))
     ((null (send ros::comm-state :action-goal))
      (ros::time 0))
     (t
