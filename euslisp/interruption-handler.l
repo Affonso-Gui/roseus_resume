@@ -222,27 +222,29 @@
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
   ;; store additional controllers
-  ;; TODO: is it ok to overwrite it every time?
-  (unless (send ri :simulation-modep)
-    (let (acc)
-      (dolist (controller additional-controllers)
-        (if (derivedp controller ros::simple-action-client)
-            (push controller acc)
-            (progn
-              (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" controller)
-              (ros::ros-warn "Skipping ~S..." controller))))
-      (setf (get ri :additional-controllers) (nreverse acc))))
+  (let (acc)
+    (dolist (controller additional-controllers)
+      (if (derivedp controller ros::simple-action-client)
+          (progn
+            (ros::ros-warn "Registering additional controller: ~S" controller)
+            (push controller acc))
+          (progn
+            (ros::ros-warn "Additional controllers must be derived from ros::simple-action-client class: ~S" controller)
+            (ros::ros-warn "Skipping ~S..." controller))))
+    (setf (get ri :additional-controllers)
+          (append (get ri :additional-controllers) (nreverse acc))))
   ;; generate & install interruption handlers
-  (ros::ros-info "Installing interruption handler...")
-  (generate-interruption-handler-with-controller-interrupt ri)
-  (install-handler interruption 'interruption-handler-with-controller-interrupt)
-  (install-handler on-interruption
-                   #'(lambda (c) (send ri :interrupt-angle-vector (send c :status))))
-  (install-handler on-standby
-                   #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
-  (install-handler on-resume
-                   #'(lambda (c) (send ri :resume-angle-vector (send c :status))))
-  (ros::ros-info "...done.")
+  (unless (fboundp 'interruption-handler-with-controller-interrupt)
+    (ros::ros-info "Installing interruption handler...")
+    (generate-interruption-handler-with-controller-interrupt ri)
+    (install-handler interruption 'interruption-handler-with-controller-interrupt)
+    (install-handler on-interruption
+                     #'(lambda (c) (send ri :interrupt-angle-vector (send c :status))))
+    (install-handler on-standby
+                     #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
+    (install-handler on-resume
+                     #'(lambda (c) (send ri :resume-angle-vector (send c :status))))
+    (ros::ros-info "...done."))
   t)
 
 
