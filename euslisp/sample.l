@@ -18,11 +18,15 @@ Installing the interruption handler overwrites sigint (C-c) behavior
 to send the following three signals:
 
 - `roseus_resume:on_interruption'
-    default_callback: (send *ri* :interrupt-angle-vector)
+    default_callback:
+      (send *ri* :interrupt-angle-vector)
+      (send *ri* :interrupt-additional-controllers)
 - `roseus_resume:on_standby'
     default_callback: creates a new REPL
 - `roseus_resume:on_resume'
-    default_callback: (send *ri* :resume-angle-vector)
+    default_callback:
+      (send *ri* :resume-additional-controllers)
+      (send *ri* :resume-angle-vector)
 ||#
 
 

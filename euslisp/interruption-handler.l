@@ -47,9 +47,9 @@
 
 (defmethod robot-interface
  (:get-action-status ()
-  (send self :spin-once)
   (let (acc)
     (labels ((check-active (ac)
+               (send ac :spin-once)
                (= (send ac :get-state) actionlib_msgs::GoalStatus::*active*))
              (make-action-snapshot (ac)
                (if (and (derivedp ac controller-action-client)
@@ -78,12 +78,14 @@
           (push (make-action-snapshot ac) acc)))
       (nreverse acc))))
  (:interrupt-angle-vector (&optional status)
-  (send self :cancel-angle-vector)
-  ;; `controller-actions' are stopped with cancel-angle-vector
-  ;; stop other actions by directly sending a cancel request
-  (dolist (snapshot
-            (remove-if #'(lambda (s) (find (send s :action-client) controller-actions)) status))
-    (send (send snapshot :action-client) :cancel-goal)))
+   ;; controller-actions are stopped with `:cancel-angle-vector', to ensure a quick stop
+   ;; for more smooth stopping, use `:stop-motion' instead
+   (send self :cancel-angle-vector))
+ (:interrupt-additional-controllers (status)
+   ;; stop other actions by directly sending a cancel request
+   (dolist (snapshot
+             (remove-if #'(lambda (s) (find (send s :action-client) controller-actions)) status))
+     (send (send snapshot :action-client) :cancel-goal)))
  (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
    (unless (some #'identity status)
      (return-from :resume-angle-vector nil))
@@ -91,10 +93,7 @@
    (let ((offset 0.0)
          (controller-action-status
           (remove-if-not #'(lambda (val) (derivedp val roseus_resume::controller-action-snapshot))
-                         status))
-         (simple-action-status
-          (remove-if #'(lambda (val) (derivedp val roseus_resume::controller-action-snapshot))
-                     status)))
+                         status)))
      (labels
          ((offset-point (point tm)
             (send point :time_from_start (ros::time+ (send point :time_from_start) (ros::time tm)))
@@ -156,7 +155,7 @@
                          (send goal :trajectory :points)))))
 
        ;; Send commands
-       (dolist (s status)
+       (dolist (s controller-action-status)
          (let* ((ac (send s :action-client))
                 (action-goal (send ac :make-goal-instance))
                 (goal (send s :goal))
@@ -165,21 +164,37 @@
            ;; Prepare message
            (send action-goal :header :stamp tm)
            (send action-goal :header :seq 1)
-           (if (derivedp s roseus_resume::controller-action-snapshot)
-               (progn
-                 (send action-goal :goal :trajectory (send goal :trajectory))
-                 (send action-goal :goal :trajectory :header :stamp tm)
-                 (send action-goal :goal :trajectory :header :seq 1))
-               (send action-goal :goal goal))
+           (send action-goal :goal :trajectory (send goal :trajectory))
+           (send action-goal :goal :trajectory :header :stamp tm)
+           (send action-goal :goal :trajectory :header :seq 1)
 
            ;; Send goal to controller
-           (send self :spin-once)
+           (send ac :spin-once)
            (send ac :send-goal action-goal)))
 
        ;; Wait offset before resuming
        (when controller-action-status
          (unix:usleep (truncate (* offset 1000000))))
-       t))))
+       t)))
+ (:resume-additional-controllers (status)
+   ;; Send commands
+   (dolist (s status)
+     ;; skip controller actions
+     (when (and (derivedp s roseus_resume::action-snapshot)
+                (not (derivedp s roseus_resume::controller-action-snapshot)))
+       (let* ((ac (send s :action-client))
+              (action-goal (send ac :make-goal-instance))
+              (goal (send s :goal))
+              (tm (ros::time-now)))
+
+         ;; Prepare message
+         (send action-goal :header :stamp tm)
+         (send action-goal :header :seq 1)
+         (send action-goal :goal goal)
+
+         ;; Send goal to controller
+         (send ac :spin-once)
+         (send ac :send-goal action-goal))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -242,11 +257,15 @@
     (generate-interruption-handler-with-controller-interrupt ri)
     (install-handler interruption 'interruption-handler-with-controller-interrupt)
     (install-handler on-interruption
-                     #'(lambda (c) (send ri :interrupt-angle-vector (send c :status))))
+                     #'(lambda (c)
+                         (send ri :interrupt-angle-vector (send c :status))
+                         (send ri :interrupt-additional-controllers (send c :status))))
     (install-handler on-standby
                      #'(lambda (c) (invoke-next-handler (send c :interruption-instance))))
     (install-handler on-resume
-                     #'(lambda (c) (send ri :resume-angle-vector (send c :status))))
+                     #'(lambda (c)
+                         (send ri :resume-additional-controllers (send c :status))
+                         (send ri :resume-angle-vector (send c :status))))
     (ros::ros-info "Interruption handler installed.")
     t))
 
