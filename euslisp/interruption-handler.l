@@ -204,6 +204,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
+          *current-status*
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -211,6 +212,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; INTERRUPTION HANDLERS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; status object
+(defvar *current-status* nil
+  "Snapshots of interrupted actions")
 
 ;; conditions
 (defcondition on-interruption :slots (status))
@@ -223,19 +228,19 @@
   (compile
    (eval
     `(defun interruption-handler-with-controller-interrupt (c)
-       (let ((action-status
+       (let ((*current-status*
               (handler-case (send ,ri :get-action-status)
                 ;; ensure interruption even upon error
                 (error (e) (signals on-interruption :status nil)
                        (euserror e)))))
-         (ros::ros-info ";; action-status: ~A" action-status)
+         (ros::ros-info ";; action-status: ~A" *current-status*)
          (ros::ros-info ";; on-interruption...")
-         (signals on-interruption :status action-status)
+         (signals on-interruption :status *current-status*)
          (ros::ros-info ";; on-standby...")
-         (signals on-standby :status action-status
+         (signals on-standby :status *current-status*
                   :interruption-instance c)
          (ros::ros-info ";; on-resume...")
-         (signals on-resume :status action-status))))))
+         (signals on-resume :status *current-status*))))))
 
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
