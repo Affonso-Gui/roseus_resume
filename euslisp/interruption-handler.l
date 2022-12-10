@@ -43,9 +43,28 @@
   (:name () (send ac :name))
   (:action-client () ac)
   (:goal () (send goal :goal))
+  (:angle-vector (robot-state)
+    (let ((cacts (find (get ac :name) (send (ac . ri) :default-controller)
+                       :key #'(lambda (x) (cdr (assoc :controller-action x)))
+                       :test #'string=)))
+      (when cacts
+        (let ((controller-joint-names (cdr (assoc :joint-names cacts)))
+              (joint-names (cdr (assoc :name robot-state)))
+              (joint-positions (cdr (assoc :position robot-state))))
+          (labels ((ros-joint-angle (nm val)
+                     (let ((joint (send ((ac . ri) . robot)
+                                        (intern (string-upcase nm) *keyword-package*))))
+                       (if (derivedp joint rotational-joint)
+                           (rad2deg val)
+                           (* val 1000))))
+                   (joint-angle (nm)
+                     (ros-joint-angle nm
+                      (elt joint-positions (position nm joint-names :test #'string=)))))
+            (map float-vector #'joint-angle controller-joint-names))))))
   (:time () time))
 
 (defmethod robot-interface
+ (:robot-state () robot-state)
  (:get-action-status ()
   (let (acc)
     (labels ((check-active (ac)
@@ -204,7 +223,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          *current-status*
+          *current-status* *current-robot-state*
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -216,11 +235,13 @@
 ;; status object
 (defvar *current-status* nil
   "Snapshots of interrupted actions")
+(defvar *current-robot-state* nil
+  "Interrupted robot state")
 
 ;; conditions
-(defcondition on-interruption :slots (status))
-(defcondition on-standby :slots (status interruption-instance))
-(defcondition on-resume :slots (status))
+(defcondition on-interruption :slots (status robot-state))
+(defcondition on-standby :slots (status robot-state interruption-instance))
+(defcondition on-resume :slots (status robot-state))
 
 ;; define callback
 (defun generate-interruption-handler-with-controller-interrupt (ri)
@@ -228,19 +249,23 @@
   (compile
    (eval
     `(defun interruption-handler-with-controller-interrupt (c)
-       (let ((*current-status*
-              (handler-case (send ,ri :get-action-status)
-                ;; ensure interruption even upon error
-                (error (e) (signals on-interruption :status nil)
-                       (euserror e)))))
+       (let* ((*current-status*
+               (handler-case (send ,ri :get-action-status)
+                 ;; ensure interruption even upon error
+                 (error (e) (signals on-interruption :status nil)
+                        (euserror e))))
+              (*current-robot-state* (send ,ri :robot-state)))
          (ros::ros-info ";; action-status: ~A" *current-status*)
          (ros::ros-info ";; on-interruption...")
-         (signals on-interruption :status *current-status*)
+         (signals on-interruption
+                  :status *current-status* :robot-state *current-robot-state*)
          (ros::ros-info ";; on-standby...")
          (signals on-standby :status *current-status*
+                  :robot-state *current-robot-state*
                   :interruption-instance c)
          (ros::ros-info ";; on-resume...")
-         (signals on-resume :status *current-status*))))))
+         (signals on-resume
+                  :status *current-status* :robot-state *current-robot-state*))))))
 
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
