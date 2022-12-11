@@ -77,7 +77,8 @@
         (assert (derivedp value ros::object) value-error "ros::object expected")
         (setq current-state (acons topic nil current-state))
         (ros::subscribe (concatenate string "@" topic) (class value)
-                        #'(lambda (msg) (set-alist topic msg current-state :test #'string=))
+                        #'(lambda (msg)
+                            (setf (cdr (assoc topic current-state :test #'string=)) msg))
                         :groupname groupname)))
     self)
   (:action-status () action-status)
@@ -248,13 +249,6 @@
 ;; RECURSIVE EPS=
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-;; alist manipulation
-(defun set-alist (k v alist &key (key) (test 'eq))
-  (let ((cur-cons (assoc k alist :key key :test test)))
-    (if cur-cons
-        (progn (setf (cdr cur-cons) v) alist)
-        (nconc alist (list (cons k v))))))
-
 (in-package "GEOMETRY")
 (export '(*epsilon-alist* eps-rec=))
 
@@ -283,6 +277,9 @@
      t)
     ((derivedp m std_msgs::Header)
      ;; never check headers
+     t)
+    ((derivedp m ros::Time)
+     ;; never check time
      t)
     ((derivedp m geometry_msgs::Pose)
      ;; convert to coordinates
@@ -332,7 +329,7 @@
        (let ((*current-status*
               (handler-case (instance interruption-snapshot :init
                                       (send ,ri :get-action-status)
-                                      (send ,ri :robot-state)
+                                      (copy-object (send ,ri :robot-state))
                                       :groupname (,ri . user::groupname))
                 ;; ensure interruption even upon error
                 (error (e) (signals on-interruption :status nil)
@@ -504,7 +501,8 @@
 
 (use-package "GEOMETRY")
 
-(defun check-state (ri &optional (interrupt-state *current-status*)
+(defun check-state (ri &key (interrupt-state *current-status*)
+                         (angle-vector-eps (* 1000 *epsilon*))
                          (robot-state-eps *epsilon*)
                          (current-state-eps *epsilon*))
   ;; check if the interrupted state is similar to the current state
@@ -513,9 +511,33 @@
   (assert (derivedp interrupt-state interruption-snapshot) type-error
           "interruption-snapshot expected")
   (send ri :spin-once)
-  (and (eps-rec= (send interrupt-state :get-tint)
-                 (send interrupt-state :current-state)
-                 current-state-eps)
-       (eps-rec= (send interrupt-state :robot-state)
-                 (send ri :robot-state)
-                 robot-state-eps)))
+  ;; check environment state
+  (when (not (eps-rec= (send interrupt-state :get-tint)
+                       (send interrupt-state :current-state)
+                       current-state-eps))
+    (ros::ros-info ";; Environment State Mismatch")
+    (return-from check-state nil))
+  ;; check robot state
+  (let* ((current-robot-state (send ri :robot-state))
+         (interrupt-robot-state (send interrupt-state :robot-state)))
+    ;; joint angles
+    (dolist (ac (send interrupt-state :action-status))
+      (when (not (eps-rec= (send ac :angle-vector interrupt-robot-state)
+                           (send ac :angle-vector current-robot-state)
+                           angle-vector-eps))
+        (ros::ros-info ";; Joint Angle Mismatch at: ~A" (send ac :name))
+        (return-from check-state nil)))
+    ;; other states
+    (let ((joint-state-keys '(:position :effort :velocity))
+          (controller-state-keys
+           (mapcar #'(lambda (x) (intern (string-upcase (cdr (assoc :controller-state x)))
+                                         *keyword-package*))
+                   (send ri :default-controller))))
+      (dolist (rs current-robot-state)
+        (when (and (not (memq (car rs) joint-state-keys))
+                   (not (memq (car rs) controller-state-keys))
+                   (not (eps-rec= (cdr rs) (cdr (assoc (car rs) interrupt-robot-state))
+                                  robot-state-eps)))
+          (ros::ros-info ";; Robot State Mismatch at: ~A" (car rs))
+          (return-from check-state nil))))
+    t))
