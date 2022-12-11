@@ -37,7 +37,7 @@
     :super roseus_resume::action-snapshot)
 (defclass roseus_resume::interruption-snapshot
   :super propertied-object
-  :slots (action-status robot-state tint))
+  :slots (action-status robot-state tint current-state))
 (defmethod roseus_resume::action-snapshot
   (:init (action-client)
     (setq ac action-client)
@@ -67,13 +67,22 @@
   (:time () time))
 
 (defmethod roseus_resume::interruption-snapshot
-  (:init (status robot-st &optional (angle-vector-tint user::*angle-vector-tint*))
+  (:init (status robot-st &key (angle-vector-tint user::*angle-vector-tint*) groupname)
     (setq action-status status)
     (setq robot-state robot-st)
     (setq tint angle-vector-tint)
+    (dolist (topic-value tint)
+      (let ((topic (car topic-value))
+            (value (cdr topic-value)))
+        (assert (derivedp value ros::object) value-error "ros::object expected")
+        (setq current-state (acons topic nil current-state))
+        (ros::subscribe (concatenate string "@" topic) (class value)
+                        #'(lambda (msg) (set-alist topic msg current-state :test #'string=))
+                        :groupname groupname)))
     self)
   (:action-status () action-status)
   (:robot-state () robot-state)
+  (:current-state () current-state)
   (:get-tint () tint))
 
 (defmethod robot-interface
@@ -246,7 +255,9 @@
         (progn (setf (cdr cur-cons) v) alist)
         (nconc alist (list (cons k v))))))
 
-;; recursive eps=
+(in-package "GEOMETRY")
+(export '(*epsilon-alist* eps-rec=))
+
 (defvar *epsilon-alist* nil)
 
 (defun eps-rec= (m n &optional (eps *epsilon*) (eps-rot eps))
@@ -294,7 +305,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          *current-status*
+          *current-status* check-state
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -321,19 +332,24 @@
        (let ((*current-status*
               (handler-case (instance interruption-snapshot :init
                                       (send ,ri :get-action-status)
-                                      (send ,ri :robot-state))
+                                      (send ,ri :robot-state)
+                                      :groupname (,ri . user::groupname))
                 ;; ensure interruption even upon error
                 (error (e) (signals on-interruption :status nil)
                        (euserror e)))))
-         (ros::ros-info ";; action-status: ~A"
-             (and *current-status* (send *current-status* :action-status)))
-         (ros::ros-info ";; on-interruption...")
-         (signals on-interruption :status *current-status*)
-         (ros::ros-info ";; on-standby...")
-         (signals on-standby :status *current-status*
-                  :interruption-instance c)
-         (ros::ros-info ";; on-resume...")
-         (signals on-resume :status *current-status*))))))
+         (unwind-protect
+              (progn
+                (ros::ros-info ";; action-status: ~A"
+                               (and *current-status* (send *current-status* :action-status)))
+                (ros::ros-info ";; on-interruption...")
+                (signals on-interruption :status *current-status*)
+                (ros::ros-info ";; on-standby...")
+                (signals on-standby :status *current-status*
+                         :interruption-instance c)
+                (ros::ros-info ";; on-resume...")
+                (signals on-resume :status *current-status*))
+           (dolist (val (send *current-status* :current-state))
+             (ros::unsubscribe (concatenate string "@" (car val))))))))))
 
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
@@ -480,3 +496,26 @@
      (ros::subscribe ,topic-name ,message-type #'urgent-intervention-cb
                      ,topic-name ,condition-name
                      :groupname *intervention-groupname*)))
+
+
+;;;;;;;;;;;;;;;;;
+;; STATE CHECK
+;;;;;;;;;;;;;;;;;
+
+(use-package "GEOMETRY")
+
+(defun check-state (ri &optional (interrupt-state *current-status*)
+                         (robot-state-eps *epsilon*)
+                         (current-state-eps *epsilon*))
+  ;; check if the interrupted state is similar to the current state
+  (if (null interrupt-state)
+      (return-from check-state nil))
+  (assert (derivedp interrupt-state interruption-snapshot) type-error
+          "interruption-snapshot expected")
+  (send ri :spin-once)
+  (and (eps-rec= (send interrupt-state :get-tint)
+                 (send interrupt-state :current-state)
+                 current-state-eps)
+       (eps-rec= (send interrupt-state :robot-state)
+                 (send ri :robot-state)
+                 robot-state-eps)))
