@@ -37,7 +37,7 @@
     :super roseus_resume::action-snapshot)
 (defclass roseus_resume::interruption-snapshot
   :super propertied-object
-  :slots (action-status robot-state))
+  :slots (action-status robot-state tint))
 (defmethod roseus_resume::action-snapshot
   (:init (action-client)
     (setq ac action-client)
@@ -67,12 +67,14 @@
   (:time () time))
 
 (defmethod roseus_resume::interruption-snapshot
-  (:init (status robot-st)
+  (:init (status robot-st &optional (angle-vector-tint user::*angle-vector-tint*))
     (setq action-status status)
     (setq robot-state robot-st)
+    (setq tint angle-vector-tint)
     self)
   (:action-status () action-status)
-  (:robot-state () robot-state))
+  (:robot-state () robot-state)
+  (:get-tint () tint))
 
 (defmethod robot-interface
  (:robot-state () robot-state)
@@ -231,6 +233,58 @@
          ;; Send goal to controller
          (send ac :spin-once)
          (send ac :send-goal action-goal))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;; RECURSIVE EPS=
+;;;;;;;;;;;;;;;;;;;;;;;
+
+;; alist manipulation
+(defun set-alist (k v alist &key (key) (test 'eq))
+  (let ((cur-cons (assoc k alist :key key :test test)))
+    (if cur-cons
+        (progn (setf (cdr cur-cons) v) alist)
+        (nconc alist (list (cons k v))))))
+
+;; recursive eps=
+(defvar *epsilon-alist* nil)
+
+(defun eps-rec= (m n &optional (eps *epsilon*) (eps-rot eps))
+  (assert (eq (class m) (class n))
+          value-error "types mismatch")
+  (if (assoc (class m) *epsilon-alist*)
+      (multiple-value-setq (eps eps-rot) (cdr (assoc (class m) *epsilon-alist*))))
+  (cond
+    ((numberp m)
+     ;; avoid eps= since it is optimized for float
+     ;; https://github.com/euslisp/EusLisp/issues/406
+     (< (abs (- m n)) eps))
+    ((symbolp m) (eql m n))
+    ((stringp m) (string-equal m n))
+    ((vectorp m) (eps-v= m n eps))
+    ((coordinates-p m) (eps-coords= m n eps eps-rot))
+    ((consp m)
+     (if (not (= (length m) (length n)))
+         (return-from eps-rec= nil))
+     (dotimes (i (length m))
+       (if (not (eps-rec= (nth i m) (nth i n) eps eps-rot))
+           (return-from eps-rec= nil)))
+     t)
+    ((derivedp m std_msgs::Header)
+     ;; never check headers
+     t)
+    ((derivedp m geometry_msgs::Pose)
+     ;; convert to coordinates
+     (eps-rec= (ros::tf-pose->coords m) (ros::tf-pose->coords n) eps eps-rot))
+    (t
+     (catch :return
+       (map nil #'(lambda (a b)
+                    (if (and (not (memq (car a) '(plist tint-vector))))
+                        (if (not (eps-rec= (cdr a) (cdr b) eps eps-rot))
+                            (throw :return nil))))
+            (send m :slots)
+            (send n :slots))
+       t))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;
