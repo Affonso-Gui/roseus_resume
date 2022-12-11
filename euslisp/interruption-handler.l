@@ -74,7 +74,7 @@
     (dolist (topic-value tint)
       (let ((topic (car topic-value))
             (value (cdr topic-value)))
-        (assert (derivedp value ros::object) value-error "ros::object expected")
+        (if (not (derivedp value ros::object)) (error value-error "ros::object expected"))
         (setq current-state (acons topic nil current-state))
         (ros::subscribe (concatenate string "@" topic) (class value)
                         #'(lambda (msg)
@@ -255,8 +255,8 @@
 (defvar *epsilon-alist* (list (cons coordinates (list 5.0 (deg2rad 5.0)))))
 
 (defun eps-rec= (m n &optional (eps *epsilon*) (eps-rot eps))
-  (assert (eq (class m) (class n))
-          value-error "types mismatch")
+  (if (not (eq (class m) (class n)))
+      (return-from eps-rec= nil))
   (if (assoc (class m) *epsilon-alist*)
       (multiple-value-setq (eps eps-rot) (cdr (assoc (class m) *epsilon-alist*))))
   (cond
@@ -511,8 +511,8 @@
   ;; check if the interrupted state is similar to the current state
   (if (null interrupt-state)
       (return-from check-state nil))
-  (assert (derivedp interrupt-state interruption-snapshot) type-error
-          "interruption-snapshot expected")
+  (if (not (derivedp interrupt-state interruption-snapshot))
+      (error type-error "interruption-snapshot expected"))
   (send ri :spin-once)
   ;; check environment state
   (when (not (eps-rec= (send interrupt-state :get-tint)
