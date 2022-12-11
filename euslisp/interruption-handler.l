@@ -252,7 +252,7 @@
 (in-package "GEOMETRY")
 (export '(*epsilon-alist* eps-rec=))
 
-(defvar *epsilon-alist* nil)
+(defvar *epsilon-alist* (list (cons coordinates (list 5.0 (deg2rad 5.0)))))
 
 (defun eps-rec= (m n &optional (eps *epsilon*) (eps-rot eps))
   (assert (eq (class m) (class n))
@@ -268,6 +268,9 @@
     ((stringp m) (string-equal m n))
     ((vectorp m) (eps-v= m n eps))
     ((coordinates-p m) (eps-coords= m n eps eps-rot))
+    ((and (consp m) (not (consp (cdr m))))
+     (and (eps-rec= (car m) (car n) eps eps-rot)
+          (eps-rec= (cdr m) (cdr n) eps eps-rot)))
     ((consp m)
      (if (not (= (length m) (length n)))
          (return-from eps-rec= nil))
