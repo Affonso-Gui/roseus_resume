@@ -2,6 +2,8 @@
 ;; ;; instead, let if fail when robot-interface has not been loaded
 ;; (require :robot-interface "package://pr2eus/robot-interface.l")
 
+(require :logger "lib/llib/logger")
+
 (unless (find-package "ROSEUS_RESUME") (make-package "ROSEUS_RESUME"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -559,6 +561,14 @@
                          environment-state-eps
                          :test #'test-occlusion))
       (ros::ros-info ";; Environment State Mismatch")
+      (log:log-debug "INTERRUPTION STATE: ~A" (send interrupt-state :get-tint))
+      (if (<= log::*logger-level* (log::get-level :debug))
+          (map nil #'(lambda (x) (print (car x)) (print-ros-msg (cdr x)))
+               (send interrupt-state :get-tint)))
+      (log:log-debug "CURRENT STATE: ~A" (send interrupt-state :current-state))
+      (if (<= log::*logger-level* (log::get-level :debug))
+          (map nil #'(lambda (x) (print (car x)) (print-ros-msg (cdr x)))
+               (send interrupt-state :current-state)))
       (return-from check-state nil))
     ;; check robot state
     (let* ((current-robot-state (send ri :robot-state))
@@ -569,6 +579,8 @@
                              (send ac :angle-vector current-robot-state)
                              angle-vector-eps))
           (ros::ros-info ";; Joint Angle Mismatch at: ~A" (send ac :name))
+          (log:log-debug "INTERRUPT ANGLE: ~A" (send ac :angle-vector interrupt-robot-state))
+          (log:log-debug "CURRENT ANGLE: ~A" (send ac :angle-vector current-robot-state))
           (return-from check-state nil)))
       ;; other states
       (let ((joint-state-keys '(:position :effort :velocity))
@@ -582,5 +594,7 @@
                      (not (eps-rec= (cdr (assoc (car rs) interrupt-robot-state)) (cdr rs)
                                     robot-state-eps)))
             (ros::ros-info ";; Robot State Mismatch at: ~A" (car rs))
+            (log:log-debug "INTERRUPT STATE: ~A" (cdr (assoc (car rs) interrupt-robot-state)))
+            (log:log-debug "CURRENT STATE: ~A" (cdr rs))
             (return-from check-state nil))))
     t)))
