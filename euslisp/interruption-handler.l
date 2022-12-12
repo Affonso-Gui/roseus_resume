@@ -307,7 +307,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          *current-status* check-state
+          *current-status* check-tint-collision check-state
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -506,6 +506,31 @@
 
 (use-package "GEOMETRY")
 
+(defun check-tint-collision (value collision-model &optional (mode :any)
+                             &key (collision-range 50.0))
+  ;; check collision with coordinate, geometry_msg::Pose, or geometry_msgs::PoseArray
+  (assert (or (eq mode :any) (eq mode :all)) "mode should be :any or :all")
+  (flet
+      ((list-coords (a)
+         (cond
+           ((coordinates-p a) (list a))
+           ((derivedp a geometry_msgs::Pose) (list (ros::tf-pose->coords a)))
+           ((derivedp a geometry_msgs::PoseArray)
+            (mapcar #'ros::tf-pose->coords (send a :poses)))
+           (t
+            (error type-error
+                   "expected coordinates, geometry_msg::Pose, or geometry_msgs::PoseArray")))))
+    (let* ((c-list (list-coords value))
+           (cube (make-cube collision-range collision-range collision-range)))
+      (dolist (c c-list)
+        (send cube :newcoords c)
+        (if (= (user::collision-check collision-model cube) 1)
+            (if (eq mode :any) (return-from check-tint-collision t))
+            (if (eq mode :all) (return-from check-tint-collision nil))))
+      (case mode
+        (:any nil)
+        (:all t)))))
+
 (defun check-state (ri &key (interrupt-state *current-status*)
                          (angle-vector-eps (* 1000 *epsilon*))
                          (robot-state-eps *epsilon*)
@@ -519,24 +544,13 @@
       (error type-error "interruption-snapshot expected"))
   (send ri :spin-once)
 
-  (labels ((check-collision (c)
-             (and collision-model
-                  (let ((cube (make-cube collision-range collision-range collision-range)))
-                    (send cube :newcoords c)
-                    (= (user::collision-check collision-model cube) 1))))
-           (list-coords (a b)
-             (cond
-               (b nil)
-               ((coordinates-p a) (list a))
-               ((derivedp a geometry_msgs::Pose) (list (ros::tf-pose->coords a)))
-               ((derivedp a geometry_msgs::PoseArray)
-                (mapcar #'ros::tf-pose->coords (send a :poses)))))
-           (test-occlusion (a b)
-             (dolist (c (list-coords a b))
-               (if (not (check-collision c))
-                   (return-from test-occlusion nil)))
-             (ros::ros-info ";; Collision Detected")
-             t))
+  (labels ((test-occlusion (a b)
+             (when (and collision-model
+                        (not b)
+                        (check-tint-collision a collision-model :all
+                                              :collision-range collision-range))
+               (ros::ros-info ";; Collision Detected")
+               t)))
 
     ;; check environment state
     (when (not (eps-rec= (send interrupt-state :get-tint)
