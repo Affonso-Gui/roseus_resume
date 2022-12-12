@@ -517,11 +517,11 @@
            ((derivedp a geometry_msgs::Pose) (list (ros::tf-pose->coords a)))
            ((derivedp a geometry_msgs::PoseArray)
             (mapcar #'ros::tf-pose->coords (send a :poses)))
-           (t
-            (error type-error
-                   "expected coordinates, geometry_msg::Pose, or geometry_msgs::PoseArray")))))
-    (let* ((c-list (list-coords value))
-           (cube (make-cube collision-range collision-range collision-range)))
+           (t nil))))
+    (let ((c-list (list-coords value))
+          cube)
+      (if (null c-list) (return-from check-tint-collision nil))
+      (setq cube (make-cube collision-range collision-range collision-range))
       (dolist (c c-list)
         (send cube :newcoords c)
         (if (= (user::collision-check collision-model cube) 1)
