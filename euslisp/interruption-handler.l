@@ -69,7 +69,7 @@
   (:time () time))
 
 (defmethod roseus_resume::interruption-snapshot
-  (:init (status robot-st &key (angle-vector-tint user::*angle-vector-tint*) groupname)
+  (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*) groupname)
     (setq action-status status)
     (setq robot-state robot-st)
     (setq tint angle-vector-tint)
@@ -80,7 +80,8 @@
         (setq current-state (acons topic nil current-state))
         (ros::subscribe (concatenate string "@" topic) (class value)
                         #'(lambda (msg)
-                            (setf (cdr (assoc topic current-state :test #'string=)) msg))
+                            (setf (cdr (assoc topic current-state :test #'string=)) msg)
+                            (signals roseus_resume::environment-state-update))
                         :groupname groupname)))
     self)
   (:action-status () action-status)
@@ -309,6 +310,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
+          environment-state-update
           *current-status* check-tint-collision check-state
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
@@ -326,6 +328,7 @@
 (defcondition on-interruption :slots (status))
 (defcondition on-standby :slots (status interruption-instance))
 (defcondition on-resume :slots (status))
+(defcondition environment-state-update)
 
 ;; define callback
 (defun generate-interruption-handler-with-controller-interrupt (ri)
@@ -563,11 +566,11 @@
       (ros::ros-info ";; Environment State Mismatch")
       (log:log-debug "INTERRUPTION STATE: ~A" (send interrupt-state :get-tint))
       (if (<= log::*logger-level* (log::get-level :debug))
-          (map nil #'(lambda (x) (print (car x)) (print-ros-msg (cdr x)))
+          (map nil #'(lambda (x) (print (car x)) (user::print-ros-msg (cdr x)))
                (send interrupt-state :get-tint)))
       (log:log-debug "CURRENT STATE: ~A" (send interrupt-state :current-state))
       (if (<= log::*logger-level* (log::get-level :debug))
-          (map nil #'(lambda (x) (print (car x)) (print-ros-msg (cdr x)))
+          (map nil #'(lambda (x) (print (car x)) (user::print-ros-msg (cdr x)))
                (send interrupt-state :current-state)))
       (return-from check-state nil))
     ;; check robot state
