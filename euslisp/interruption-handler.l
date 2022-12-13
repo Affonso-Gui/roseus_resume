@@ -48,6 +48,9 @@
   (:name () (send ac :name))
   (:action-client () ac)
   (:goal () (send goal :goal))
+  (:time () time))
+
+(defmethod roseus_resume::controller-action-snapshot
   (:angle-vector (robot-state)
     (let ((cacts (find (get ac :name) (send (ac . ri) :default-controller)
                        :key #'(lambda (x) (cdr (assoc :controller-action x)))
@@ -65,8 +68,7 @@
                    (joint-angle (nm)
                      (ros-joint-angle nm
                       (elt joint-positions (position nm joint-names :test #'string=)))))
-            (map float-vector #'joint-angle controller-joint-names))))))
-  (:time () time))
+            (map float-vector #'joint-angle controller-joint-names)))))))
 
 (defmethod roseus_resume::interruption-snapshot
   (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*) groupname)
@@ -526,7 +528,9 @@
     (let ((c-list (list-coords value))
           cube)
       (if (null c-list) (return-from check-tint-collision nil))
-      (setq cube (make-cube collision-range collision-range collision-range))
+      (if (numberp collision-range)
+          (setq cube (make-cube collision-range collision-range collision-range))
+          (setq cube collision-range))
       (dolist (c c-list)
         (send cube :newcoords c)
         (if (= (user::collision-check collision-model cube) 1)
@@ -578,9 +582,10 @@
            (interrupt-robot-state (send interrupt-state :robot-state)))
       ;; joint angles
       (dolist (ac (send interrupt-state :action-status))
-        (when (not (eps-rec= (send ac :angle-vector interrupt-robot-state)
-                             (send ac :angle-vector current-robot-state)
-                             angle-vector-eps))
+        (when (and (derivedp ac controller-action-snapshot)
+                   (not (eps-rec= (send ac :angle-vector interrupt-robot-state)
+                                  (send ac :angle-vector current-robot-state)
+                                  angle-vector-eps)))
           (ros::ros-info ";; Joint Angle Mismatch at: ~A" (send ac :name))
           (log:log-debug "INTERRUPT ANGLE: ~A" (send ac :angle-vector interrupt-robot-state))
           (log:log-debug "CURRENT ANGLE: ~A" (send ac :angle-vector current-robot-state))
