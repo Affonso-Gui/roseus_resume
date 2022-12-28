@@ -310,7 +310,7 @@
     (t
      (catch :return
        (map nil #'(lambda (a b)
-                    (if (and (not (memq (car a) '(plist tint-vector))))
+                    (if (and (not (memq (car a) '(plist tint-vector ros::_connection-header))))
                         (if (not (eps-rec= (cdr a) (cdr b) eps eps-rot :test test))
                             (throw :return nil))))
             (send m :slots)
