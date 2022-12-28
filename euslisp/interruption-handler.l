@@ -258,8 +258,11 @@
 (export '(*epsilon-alist* eps-rec=))
 
 (defvar *epsilon-alist* (list (cons coordinates (list 5.0 (deg2rad 5.0)))))
+(defvar *eps-rec=-last-argument* nil
+  "last arguments evaluated during an eps-rec= call")
 
 (defun eps-rec= (m n &optional (eps *epsilon*) (eps-rot eps) &key test)
+  (setq *eps-rec=-last-argument* (list m n))
   (if (and test (funcall test m n))
       (return-from eps-rec= t))
   (if (not (eq (class m) (class n)))
@@ -312,7 +315,7 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
-          environment-state-update
+          environment-state-update robot-state-eps=
           *current-status* check-tint-collision check-state
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
@@ -513,6 +516,24 @@
 
 (use-package "GEOMETRY")
 
+(defun robot-state-eps= (ri prev-robot-state current-robot-state &rest args)
+  ;; eps-rec= without joint-angle related
+  (setq *eps-rec=-last-argument* nil)
+  (let ((joint-state-keys '(:position :effort :velocity))
+        (controller-state-keys
+         (mapcar #'(lambda (x) (intern (string-upcase (cdr (assoc :controller-state x)))
+                                       *keyword-package*))
+                 (send ri :default-controller))))
+    (dolist (rs current-robot-state)
+      (when (and (not (memq (car rs) joint-state-keys))
+                 (not (memq (car rs) controller-state-keys)))
+        (let* ((prev-rs (assoc (car rs) prev-robot-state))
+               (res (apply #'eps-rec= (cdr prev-rs) (cdr rs) args)))
+          (setq *eps-rec=-last-argument* (list prev-rs rs))
+          (if (not res)
+              (return-from robot-state-eps= nil)))))
+    t))
+
 (defun check-tint-collision (value collision-model &optional (mode :any)
                              &key (collision-range 50.0))
   ;; check collision with coordinate, geometry_msg::Pose, or geometry_msgs::PoseArray
@@ -567,7 +588,7 @@
                          environment-state-eps
                          environment-state-eps
                          :test #'test-occlusion))
-      (ros::ros-info ";; Environment State Mismatch")
+      (ros::ros-info ";; Environment State Mismatch at: ~A" *eps-rec=-last-argument*)
       (log:log-debug "INTERRUPTION STATE: ~A" (send interrupt-state :get-tint))
       (if (<= log::*logger-level* (log::get-level :debug))
           (map nil #'(lambda (x) (print (car x)) (user::print-ros-msg (cdr x)))
@@ -586,23 +607,15 @@
                    (not (eps-rec= (send ac :angle-vector interrupt-robot-state)
                                   (send ac :angle-vector current-robot-state)
                                   angle-vector-eps)))
-          (ros::ros-info ";; Joint Angle Mismatch at: ~A" (send ac :name))
-          (log:log-debug "INTERRUPT ANGLE: ~A" (send ac :angle-vector interrupt-robot-state))
-          (log:log-debug "CURRENT ANGLE: ~A" (send ac :angle-vector current-robot-state))
+          (ros::ros-info ";; joint angle mismatch at: ~a" (send ac :name))
+          (log:log-debug "interrupt angle: ~a" (send ac :angle-vector interrupt-robot-state))
+          (log:log-debug "current angle: ~a" (send ac :angle-vector current-robot-state))
           (return-from check-state nil)))
       ;; other states
-      (let ((joint-state-keys '(:position :effort :velocity))
-            (controller-state-keys
-             (mapcar #'(lambda (x) (intern (string-upcase (cdr (assoc :controller-state x)))
-                                           *keyword-package*))
-                     (send ri :default-controller))))
-        (dolist (rs current-robot-state)
-          (when (and (not (memq (car rs) joint-state-keys))
-                     (not (memq (car rs) controller-state-keys))
-                     (not (eps-rec= (cdr (assoc (car rs) interrupt-robot-state)) (cdr rs)
-                                    robot-state-eps)))
-            (ros::ros-info ";; Robot State Mismatch at: ~A" (car rs))
-            (log:log-debug "INTERRUPT STATE: ~A" (cdr (assoc (car rs) interrupt-robot-state)))
-            (log:log-debug "CURRENT STATE: ~A" (cdr rs))
-            (return-from check-state nil))))
-    t)))
+      (when (not (robot-state-eps= ri interrupt-robot-state current-robot-state
+                                   robot-state-eps))
+        (ros::ros-info ";; Robot State Mismatch at: ~A" (caar *eps-rec=-last-argument*))
+        (log:log-debug "INTERRUPT STATE: ~A" (cdr (first *eps-rec=-last-argument*)))
+        (log:log-debug "CURRENT STATE: ~A" (cdr (second *eps-rec=-last-argument*)))
+        (return-from check-state nil)))
+    t))
