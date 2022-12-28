@@ -39,7 +39,8 @@
     :super roseus_resume::action-snapshot)
 (defclass roseus_resume::interruption-snapshot
   :super propertied-object
-  :slots (action-status robot-state tint current-state))
+  :slots (action-status robot-state tint gripper-tint current-state))
+
 (defmethod roseus_resume::action-snapshot
   (:init (action-client)
     (setq ac action-client)
@@ -71,11 +72,14 @@
             (map float-vector #'joint-angle controller-joint-names)))))))
 
 (defmethod roseus_resume::interruption-snapshot
-  (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*) groupname)
+  (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*)
+                               ((:gripper-tint gtint) *gripper-tint*)
+                               groupname)
     (setq action-status status)
     (setq robot-state robot-st)
     (setq tint angle-vector-tint)
-    (dolist (topic-value tint)
+    (setq gripper-tint gtint)
+    (dolist (topic-value (send self :get-tint))
       (let ((topic (car topic-value))
             (value (cdr topic-value)))
         (if (not (derivedp value ros::object)) (error value-error "ros::object expected"))
@@ -89,7 +93,13 @@
   (:action-status () action-status)
   (:robot-state () robot-state)
   (:current-state () current-state)
-  (:get-tint () tint))
+  (:get-tint ()
+    ;; only return topic-value pairs
+    (mapcar #'(lambda (x) (cons (car x) (send (cdr x) :message)))
+            (remove-if-not
+             #'(lambda (x) (and (stringp (car x)) (derivedp (cdr x) ros::ros-tint)))
+             tint)))
+  (:get-gripper-tint () gripper-tint))
 
 (defmethod robot-interface
  (:robot-state () robot-state)
@@ -255,7 +265,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;
 
 (in-package "GEOMETRY")
-(export '(*epsilon-alist* eps-rec=))
+(export '(*epsilon-alist* *eps-rec=-last-argument* eps-rec=))
 
 (defvar *epsilon-alist* (list (cons coordinates (list 5.0 (deg2rad 5.0)))))
 (defvar *eps-rec=-last-argument* nil
