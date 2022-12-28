@@ -39,7 +39,7 @@
     :super roseus_resume::action-snapshot)
 (defclass roseus_resume::interruption-snapshot
   :super propertied-object
-  :slots (action-status robot-state tint gripper-tint current-state))
+  :slots (action-status robot-state checkpoint-list tint gripper-tint current-state))
 
 (defmethod roseus_resume::action-snapshot
   (:init (action-client)
@@ -74,9 +74,11 @@
 (defmethod roseus_resume::interruption-snapshot
   (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*)
                                ((:gripper-tint gtint) *gripper-tint*)
+                               (motion-checkpoint-list *motion-checkpoint-list*)
                                groupname)
     (setq action-status status)
     (setq robot-state robot-st)
+    (setq checkpoint-list motion-checkpoint-list)
     (setq tint angle-vector-tint)
     (setq gripper-tint gtint)
     (dolist (topic-value (send self :get-tint))
@@ -93,6 +95,7 @@
   (:action-status () action-status)
   (:robot-state () robot-state)
   (:current-state () current-state)
+  (:checkpoint-list () checkpoint-list)
   (:get-tint ()
     ;; only return topic-value pairs
     (mapcar #'(lambda (x) (cons (car x) (send (cdr x) :message)))
@@ -327,6 +330,7 @@
 (export '(on-interruption on-standby on-resume install-interruption-handler
           environment-state-update robot-state-eps=
           *current-status* check-tint-collision check-state
+          find-motion-checkpoint
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -651,10 +655,11 @@
                 (error value-error "Could not find ~A in interrupted robot state" key))
             (if (not (assoc key current-robot-state))
                 (error value-error "Could not find ~A in current robot state" key))
-            (if (not (eps-rec= (assoc key interrupt-robot-state)
-                               (assoc key current-robot-state)
-                               gripper-state-eps))
-                (return-from find-emark (car mark)))))))
+            (when (not (eps-rec= (assoc key interrupt-robot-state)
+                                 (assoc key current-robot-state)
+                                 gripper-state-eps))
+              (ros::ros-info ";; Gripper State Mismatch: ~A ~A" limb (car mark))
+              (return-from find-emark (car mark)))))))
     (when tint
       (let ((current-state (send interrupt-state :current-state)))
         (dolist (mark tint)
@@ -662,6 +667,28 @@
                  (current-mark (assoc topic current-state :test #'string=)))
             (if (not current-mark)
                 (error value-error "Could not find topic ~A in current state" topic))
-            (if (not (eps-rec= mark current-mark environment-state-eps))
-                (return-from find-emark topic))))))
+            (when (not (eps-rec= mark current-mark environment-state-eps))
+              (ros::ros-info ";; Environment State Mismatch: ~A" topic)
+              (return-from find-emark topic))))))
+    (ros::ros-info ";; No Mismatch found")
+    nil))
+
+(defun find-motion-checkpoint (ri &rest args
+                                  &key (interrupt-state *current-status*)
+                                  &allow-other-keys)
+  ;; find the next checkpoint suitable for resumption
+  ;; returns: checkpoint object, motion intent, initial condition
+  (let ((emark (apply #'find-emark ri :interrupt-state interrupt-state args))
+        (checkpoint-list (send interrupt-state :checkpoint-list))
+        prev-ckpt)
+    (dolist (ckpt checkpoint-list)
+      (let ((intent (send ckpt :motion-intent emark)))
+        (case intent
+          ((:absolute :relative)
+           (return-from find-motion-checkpoint
+             (values ckpt intent (if prev-ckpt (send prev-ckpt :get-angle-vector)))))
+          ((:displacement-absolute :displacement-relative)
+           (setq prev-ckpt ckpt))
+          (t
+           (error value-error "Unknown motion intent: ~A" intent)))))
     nil))
