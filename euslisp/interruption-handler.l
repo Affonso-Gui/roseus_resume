@@ -358,13 +358,17 @@
   (compile
    (eval
     `(defun interruption-handler-with-controller-interrupt (c)
-       (let ((*current-status*
-              (handler-case (instance interruption-snapshot :init
-                                      (send ,ri :get-action-status)
-                                      (copy-object (send ,ri :robot-state)))
-                ;; ensure interruption even upon error
-                (error (e) (signals on-interruption :status nil)
-                       (euserror e)))))
+       (let ((*current-status*))
+         (lisp::atomic
+             (setq *current-status*
+                   (instance interruption-snapshot :init
+                             (send ,ri :get-action-status)
+                             (copy-object (send ,ri :robot-state))))
+           ;; ensure interruption even upon error
+           (error (e) (signals on-interruption :status nil)
+                  (euserror e))
+           ;; delay other executions
+           (condition ()))
          (unwind-protect
               (progn
                 (send *current-status* :start-monitoring (,ri . user::groupname))
