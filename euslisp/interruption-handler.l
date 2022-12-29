@@ -74,13 +74,14 @@
 (defmethod roseus_resume::interruption-snapshot
   (:init (status robot-st &key (angle-vector-tint *angle-vector-tint*)
                                ((:gripper-tint gtint) *gripper-tint*)
-                               (motion-checkpoint-list *motion-checkpoint-list*)
-                               groupname)
+                               (motion-checkpoint-list *motion-checkpoint-list*))
     (setq action-status status)
     (setq robot-state robot-st)
     (setq checkpoint-list motion-checkpoint-list)
     (setq tint angle-vector-tint)
     (setq gripper-tint gtint)
+    self)
+  (:start-monitoring (groupname)
     (dolist (topic-value (send self :get-tint))
       (let ((topic (car topic-value))
             (value (cdr topic-value)))
@@ -90,8 +91,10 @@
                         #'(lambda (msg)
                             (setf (cdr (assoc topic current-state :test #'string=)) msg)
                             (signals roseus_resume::environment-state-update))
-                        :groupname groupname)))
-    self)
+                        :groupname groupname))))
+  (:stop-monitoring ()
+    (dolist (val current-state)
+      (ros::unsubscribe (concatenate string "@" (car val)))))
   (:action-status () action-status)
   (:robot-state () robot-state)
   (:current-state () current-state)
@@ -358,13 +361,13 @@
        (let ((*current-status*
               (handler-case (instance interruption-snapshot :init
                                       (send ,ri :get-action-status)
-                                      (copy-object (send ,ri :robot-state))
-                                      :groupname (,ri . user::groupname))
+                                      (copy-object (send ,ri :robot-state)))
                 ;; ensure interruption even upon error
                 (error (e) (signals on-interruption :status nil)
                        (euserror e)))))
          (unwind-protect
               (progn
+                (send *current-status* :start-monitoring (,ri . user::groupname))
                 (ros::ros-info ";; action-status: ~A"
                                (and *current-status* (send *current-status* :action-status)))
                 (ros::ros-info ";; on-interruption...")
@@ -374,8 +377,7 @@
                          :interruption-instance c)
                 (ros::ros-info ";; on-resume...")
                 (signals on-resume :status *current-status*))
-           (dolist (val (send *current-status* :current-state))
-             (ros::unsubscribe (concatenate string "@" (car val))))))))))
+           (send *current-status* :stop-monitoring)))))))
 
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
@@ -586,6 +588,9 @@
       (return-from check-state nil))
   (if (not (derivedp interrupt-state interruption-snapshot))
       (error type-error "interruption-snapshot expected"))
+  (if (and (null (send interrupt-state :current-state))
+           (send interrupt-state :get-tint))
+      (error "interruption has environment dependencies, but monitoring hasn't been started!"))
   (send ri :spin-once)
 
   (labels ((test-occlusion (a b)
