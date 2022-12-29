@@ -688,16 +688,18 @@
   ;; find the next checkpoint suitable for resumption
   ;; returns: checkpoint object, motion intent, initial condition
   (let ((emark (apply #'find-emark ri :interrupt-state interrupt-state args))
-        (checkpoint-list (send interrupt-state :checkpoint-list))
-        prev-ckpt)
-    (dolist (ckpt checkpoint-list)
-      (let ((intent (send ckpt :motion-intent emark)))
+        (checkpoint-list (send interrupt-state :checkpoint-list)))
+    (dotimes (i (length checkpoint-list))
+      (let* ((ckpt (nth i checkpoint-list))
+             (intent (send ckpt :motion-intent emark)))
+        (ros::ros-info ";; ~S" (list intent emark))
         (case intent
           ((:absolute :relative)
            (return-from find-motion-checkpoint
-             (values ckpt intent (if prev-ckpt (send prev-ckpt :get-angle-vector)))))
+             (let ((prev-ckpt (nth (1+ i) checkpoint-list)))
+               (values ckpt intent (if prev-ckpt (send prev-ckpt :get-angle-vector))))))
           ((:displacement-absolute :displacement-relative)
-           (setq prev-ckpt ckpt))
+           nil)
           (t
            (error value-error "Unknown motion intent: ~A" intent)))))
     nil))
