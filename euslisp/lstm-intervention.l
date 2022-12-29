@@ -1,17 +1,50 @@
-
 (unless (find-package "ROSEUS_RESUME")
   (load "package://roseus_resume/euslisp/interruption-handler.l"))
+
+(in-package "USER")
+
+(defun reset-lstm-models-from-tint (ckpt)
+  ;; reset reaching models
+  (let ((limb (get-tint-mark (ckpt . tint) #'keywordp))
+        (obj (get-tint-mark (ckpt . tint))))
+    (if (and limb obj
+             (memq (send ckpt :motion-intent obj) '(:absolute :relative)))
+        (roseus_resume::reset-lstm-models limb obj)))
+  ;; reset manipulation models
+  (dolist (mark (ckpt . gripper-tint))
+    (let ((limb (car mark))
+          (obj (cadr mark)))
+      (if (and limb obj
+               (memq (send ckpt :motion-intent obj) '(:absolute :relative)))
+          (roseus_resume::reset-lstm-models limb obj)))))
+
+(push 'reset-lstm-models-from-tint *motion-checkpoint-init-callback-list*)
+
+
 (in-package "ROSEUS_RESUME")
-(export '(install-lstm-model reset-lstm-models))
+(export '(install-lstm-model reset-lstm-models reset-all-lstm-models))
 
 (defvar *reset-lstm-service-list* nil)
-
-(defun reset-lstm-models ()
-  (dolist (srv *reset-lstm-service-list*)
-    (ros::service-call srv (instance std_srvs::TriggerRequest :init))))
+;; ((limb topic) . service-name)
 
 (defun ros::unresolve-name (name)
   (substitute #\- #\_ (substitute #\- #\/ (string-trim "/" name))))
+
+
+;; Reset Functions
+
+(defun reset-lstm-models (arm object)
+  (dolist (srv *reset-lstm-service-list*)
+    (multiple-value-bind (limb topic) (car srv)
+      (if (and (equal limb arm) (equal topic object))
+          (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init))))))
+
+(defun reset-all-lstm-models ()
+  (dolist (srv *reset-lstm-service-list*)
+    (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init))))
+
+
+;; Install Macros
 
 (defmacro install-lstm-intervention (topic condition-name predicate
                                      &optional groupname &rest init-args)
@@ -49,7 +82,7 @@
            (stop-nocontact (concatenate string model-namespace sp "stop/nocontact"))
            (reset-srv (concatenate string model-namespace sp "lstm/reset")))
       `(progn
-         (push ,reset-srv *reset-lstm-service-list*)
+         (push (cons (list ,arm ,object-topic) ,reset-srv) *reset-lstm-service-list*)
          (install-lstm-manipulation-intervention ,stop-portable ,arm ,object-topic ,condition-name
                                                  ,groupname ,@init-args)
          (install-lstm-nocontact-intervention ,stop-portable ,arm ,object-topic ,condition-name
