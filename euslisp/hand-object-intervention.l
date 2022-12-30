@@ -25,6 +25,8 @@
     (handler-bind ((hand-intersection
                     #'(lambda (c) (setq timer (instance user::mtimer :init)))))
       ;; dispatch the interruption callback
+      (print "Exitting...")
+      (ros::ros-info ";; Stashing current progress")
       (signals roseus_bt:interrupt-action)
       ;; only check for resumptions after a fixed wait-time has passed
       (until (> (send timer :stop) *resume-intersection-wait-time*)
