@@ -5,8 +5,8 @@
 
 (defun reset-lstm-models-from-tint (ckpt)
   ;; reset reaching models
-  (let ((limb (get-tint-mark (ckpt . tint) #'keywordp))
-        (obj (get-tint-mark (ckpt . tint))))
+  (let ((limb (car (get-tint-mark (ckpt . tint) #'keywordp)))
+        (obj (car (get-tint-mark (ckpt . tint)))))
     (if (and limb obj
              (memq (send ckpt :motion-intent obj) '(:absolute :relative)))
         (roseus_resume::reset-lstm-models limb obj)))
@@ -72,7 +72,7 @@
                                                &optional groupname &rest init-args)
   `(install-lstm-intervention ,model-topic ,condition-name
      (and (assoc ,arm user::*angle-vector-tint*)
-          (assoc ,object-topic user::*angle-vector-tint :test #'equal))
+          (assoc ,object-topic user::*angle-vector-tint* :test #'equal))
      ,groupname ,@init-args))
 
 (defmacro install-lstm-model (model-namespace arm object-topic condition-name
@@ -88,6 +88,6 @@
          (push (cons (list ,arm ,object-topic) ,reset-srv) *reset-lstm-service-list*)
          (install-lstm-manipulation-intervention ,stop-portable ,arm ,object-topic ,condition-name
                                                  ,groupname ,@init-args)
-         (install-lstm-nocontact-intervention ,stop-portable ,arm ,object-topic ,condition-name
+         (install-lstm-nocontact-intervention ,stop-nocontact ,arm ,object-topic ,condition-name
                                               ,groupname ,@init-args)
          t))))
