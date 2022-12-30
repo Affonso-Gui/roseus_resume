@@ -27,8 +27,9 @@
 (defvar *reset-lstm-service-list* nil)
 ;; ((limb topic) . service-name)
 
-(defun ros::unresolve-name (name)
-  (substitute #\- #\_ (substitute #\- #\/ (string-trim "/" name))))
+(when (not (fboundp 'ros::unresolve-name))
+  (defun ros::unresolve-name (name)
+    (substitute #\- #\_ (substitute #\- #\/ (string-trim "/" name)))))
 
 
 ;; Reset Functions
@@ -49,7 +50,7 @@
 (defmacro install-lstm-intervention (topic condition-name predicate
                                      &optional groupname &rest init-args)
   (let ((lstm-condition-name
-         (intern (string-upcase (ros::unresolve-name topic)))))
+         (intern (string-upcase (ros::unresolve-name topic)) (find-package "ROSEUS_RESUME"))))
     `(progn
        (defintervention ,lstm-condition-name ,topic std_msgs::Empty
                         :groupname ,groupname)
