@@ -151,7 +151,9 @@
    (dolist (snapshot
              (remove-if #'(lambda (s) (find (send s :action-client) controller-actions)) status))
      (send (send snapshot :action-client) :cancel-goal)))
- (:resume-angle-vector (status &key (scale 1.0) (min-time 1.0))
+ (:resume-angle-vector (status &key
+                               (scale roseus_resume::*resume-time-scale*)
+                               (min-time roseus_resume::*resume-min-time*))
    (if (derivedp status roseus_resume::interruption-snapshot)
        (setq status (send status :action-status)))
    (unless (some #'identity status)
@@ -331,9 +333,9 @@
 (import 'robot-interface (find-package "ROSEUS_RESUME"))
 (in-package "ROSEUS_RESUME")
 (export '(on-interruption on-standby on-resume install-interruption-handler
+          *current-status* *resume-time-scale* *resume-min-time*
           environment-state-update robot-state-eps=
-          *current-status* check-tint-collision check-state
-          find-motion-checkpoint
+          check-tint-collision check-state find-motion-checkpoint
           intervention defintervention define-urgent-intervention
           install-default-intervention install-urgent-intervention-framework))
 
@@ -345,6 +347,10 @@
 ;; status object
 (defvar *current-status* nil
   "Snapshot of interrupted state")
+(defvar *resume-time-scale* 1.0
+  "Scale used to resume interrupted motions")
+(defvar *resume-min-time* 1.0
+  "Minimum resumption time used to resume interrupted motions")
 
 ;; conditions
 (defcondition on-interruption :slots (status))
