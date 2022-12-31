@@ -49,12 +49,17 @@
                              (send server :set-succeeded
                                    (send server :result :success nil)))
                          (condition ()))))))
-        ;; start timer function
-        (timer-fn)
-        ;; dispatch the interruption callback
-        (print "Exitting...")
-        (ros::ros-info ";; Stashing current progress")
-        (signals roseus_bt:interrupt-action)))))
+        (if (> *intersection-resume-wait-time* 0)
+            (progn
+              ;; start timer function
+              (timer-fn)
+              ;; dispatch the interruption callback
+              (print "Exitting...")
+              (ros::ros-info ";; Stashing current progress")
+              (signals roseus_bt:interrupt-action))
+            ;; no wait time
+            ;; canceling the action will handle everything for us
+            (signals roseus_bt:cancel-action))))))
 (install-handler hand-object-intersection 'stop-intersection)
 
 
