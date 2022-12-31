@@ -542,8 +542,9 @@
 
 (use-package "GEOMETRY")
 
-(defun robot-state-eps= (ri prev-robot-state current-robot-state &rest args)
-  ;; eps-rec= without joint-angle related
+(defun robot-state-eps= (ri prev-robot-state current-robot-state &optional (eps *epsilon*)
+                         &key eps-dict blacklist whitelist)
+  ;; eps-rec= without joint-angle related, and more custom parameters
   (setq *eps-rec=-last-argument* nil)
   (let ((joint-state-keys '(:position :effort :velocity))
         (controller-state-keys
@@ -551,13 +552,17 @@
                                        *keyword-package*))
                  (send ri :default-controller))))
     (dolist (rs current-robot-state)
-      (when (and (not (memq (car rs) joint-state-keys))
-                 (not (memq (car rs) controller-state-keys)))
-        (let* ((prev-rs (assoc (car rs) prev-robot-state))
-               (res (apply #'eps-rec= (cdr prev-rs) (cdr rs) args)))
-          (setq *eps-rec=-last-argument* (list prev-rs rs))
-          (if (not res)
-              (return-from robot-state-eps= nil)))))
+      (let ((key (car rs)))
+        (when (and (if whitelist (memq key whitelist) t)
+                   (if blacklist (not (memq key blacklist)) t)
+                   (not (memq key joint-state-keys))
+                   (not (memq key controller-state-keys)))
+          (let* ((prev-rs (assoc key prev-robot-state))
+                 (eps (or (cdr (assoc key eps-dict)) eps))
+                 (res (eps-rec= (cdr prev-rs) (cdr rs) eps)))
+            (setq *eps-rec=-last-argument* (list prev-rs rs))
+            (if (not res)
+                (return-from robot-state-eps= nil))))))
     t))
 
 (defun check-tint-collision (value collision-model &optional (mode :any)
@@ -588,9 +593,12 @@
         (:all t)))))
 
 (defun check-state (ri &key (interrupt-state *current-status*)
+                         (environment-state-eps *epsilon*)
                          (angle-vector-eps (* 1000 *epsilon*))
                          (robot-state-eps *epsilon*)
-                         (environment-state-eps *epsilon*)
+                         robot-state-blacklist
+                         robot-state-whitelist
+                         robot-state-eps-dict
                          (collision-model (ri . user::robot))
                          (collision-range 50.0))
   ;; check if the interrupted state is similar to the current state
@@ -641,8 +649,10 @@
           (log:log-debug "current angle: ~a" (send ac :angle-vector current-robot-state))
           (return-from check-state nil)))
       ;; other states
-      (when (not (robot-state-eps= ri interrupt-robot-state current-robot-state
-                                   robot-state-eps))
+      (when (not (robot-state-eps= ri interrupt-robot-state current-robot-state robot-state-eps
+                                   :eps-dict robot-state-eps-dict
+                                   :blacklist robot-state-blacklist
+                                   :whitelist robot-state-whitelist))
         (ros::ros-info ";; Robot State Mismatch at: ~A" (caar *eps-rec=-last-argument*))
         (log:log-debug "INTERRUPT STATE: ~A" (cdr (first *eps-rec=-last-argument*)))
         (log:log-debug "CURRENT STATE: ~A" (cdr (second *eps-rec=-last-argument*)))
