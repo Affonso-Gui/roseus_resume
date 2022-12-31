@@ -12,6 +12,11 @@
   (defun ros::unresolve-name (name)
     (substitute #\- #\_ (substitute #\- #\/ (string-trim "/" name)))))
 
+(defun get-current-angle-vector-tint ()
+  (if *current-status*
+      (*current-status* . tint)
+      user::*angle-vector-tint*))
+
 
 ;; Handler Function
 
@@ -19,24 +24,37 @@
 
 (defcondition hand-object-intersection)
 (defun stop-intersection (c)
+  (ros::ros-info ";; Intersection detected! Stopping...")
   (let* ((server (find-if #'(lambda (x) (send x :is-active)) roseus_bt::*action-list*))
-         (goal (send server :get-val "GOAL"))
+         (goal (and server (send server :get-val "GOAL")))
          (timer (instance user::mtimer :init)))
-    (handler-bind ((hand-intersection
+    (when (null server)
+      (ros::ros-info ";; No actions running!")
+      (return-from stop-intersection nil))
+    (handler-bind ((hand-object-intersection
                     #'(lambda (c) (setq timer (instance user::mtimer :init)))))
-      ;; dispatch the interruption callback
-      (print "Exitting...")
-      (ros::ros-info ";; Stashing current progress")
-      (signals roseus_bt:interrupt-action)
-      ;; only check for resumptions after a fixed wait-time has passed
-      (until (> (send timer :stop) *resume-intersection-wait-time*)
-             (send *ri* :spin-once)
-             (roseus_bt:spin-once)
-             (ros::sleep))
-      (lisp::atomic
-          (send server :set-succeeded
-                (send server :result :success nil))
-        (condition ())))))
+      (labels ((timer-fn ()
+                 ;; only check for resumptions after a fixed wait-time has passed
+                 (let ((diff (- *intersection-resume-wait-time* (send timer :stop))))
+                   (if (> diff 0.0)
+                       ;; create a new lambda form to avoid overlapping registration names
+                       (progn
+                         (ros::ros-info ";; Waiting after intersection for: ~A(s)" diff)
+                         (ros::create-timer diff #'(lambda (event) (timer-fn)) :oneshot t
+                                            :groupname (send user::*ri* :get-val "GROUPNAME")))
+                       ;; send state to the tree and ask for a new request
+                       (lisp::atomic
+                           (progn
+                             (ros::ros-info ";; Sending result after intersection...")
+                             (send server :set-succeeded
+                                   (send server :result :success nil)))
+                         (condition ()))))))
+        ;; start timer function
+        (timer-fn)
+        ;; dispatch the interruption callback
+        (print "Exitting...")
+        (ros::ros-info ";; Stashing current progress")
+        (signals roseus_bt:interrupt-action)))))
 (install-handler hand-object-intersection 'stop-intersection)
 
 
@@ -50,7 +68,7 @@
                         :groupname ,groupname)
        (install-handler ,condition-name
                         #'(lambda (c)
-                            (if (assoc ,object-topic user::*angle-vector-tint* :test #'equal)
+                            (if (assoc ,object-topic (get-current-angle-vector-tint) :test #'equal)
                                 (signals hand-object-intersection)))))))
 
 (defmacro install-hand-intersection (topic arm &optional groupname)
