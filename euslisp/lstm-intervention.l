@@ -31,6 +31,7 @@
   (defun ros::unresolve-name (name)
     (substitute #\- #\_ (substitute #\- #\/ (string-trim "/" name)))))
 
+(defcondition lstm-intervention :super intervention)
 
 ;; Reset Functions
 
@@ -54,11 +55,13 @@
   (let ((lstm-condition-name
          (intern (string-upcase (ros::unresolve-name topic)) (find-package "ROSEUS_RESUME"))))
     `(progn
+       (unless (boundp ',lstm-condition-name)
+         (defcondition ,lstm-condition-name :super lstm-intervention))
        (defintervention ,lstm-condition-name ,topic std_msgs::Empty
                         :groupname ,groupname)
        (install-handler ,lstm-condition-name
           #'(lambda (c)
-              (handler-bind ((,lstm-condition-name #'identity))
+              (handler-bind ((,lstm-intervention #'identity))
                 (if ,predicate
                     (signals ,condition-name ,@init-args))))))))
 
