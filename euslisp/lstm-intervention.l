@@ -36,16 +36,18 @@
 ;; Reset Functions
 
 (defun reset-lstm-models (arm object)
-  (dolist (srv *reset-lstm-service-list*)
-    (multiple-value-bind (limb topic) (car srv)
-      (when (and (equal limb arm) (equal topic object))
-        (ros::ros-info ";; Resetting lstm model ~A" (cdr srv))
-        (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init))))))
+  (handler-bind ((lstm-intervention #'identity))
+    (dolist (srv *reset-lstm-service-list*)
+      (multiple-value-bind (limb topic) (car srv)
+        (when (and (equal limb arm) (equal topic object))
+          (ros::ros-info ";; Resetting lstm model ~A" (cdr srv))
+          (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init)))))))
 
 (defun reset-all-lstm-models ()
-  (dolist (srv *reset-lstm-service-list*)
-    (ros::ros-info ";; Resetting lstm model ~A" (cdr srv))
-    (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init))))
+  (handler-bind ((lstm-intervention #'identity))
+    (dolist (srv *reset-lstm-service-list*)
+      (ros::ros-info ";; Resetting lstm model ~A" (cdr srv))
+      (ros::service-call (cdr srv) (instance std_srvs::TriggerRequest :init)))))
 
 
 ;; Install Macros
