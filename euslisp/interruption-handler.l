@@ -377,7 +377,9 @@
            (condition ()))
          (unwind-protect
               (progn
-                (send *current-status* :start-monitoring (,ri . user::groupname))
+                (lisp::atomic
+                    (send *current-status* :start-monitoring (,ri . user::groupname))
+                  (condition ()))
                 (ros::ros-info ";; action-status: ~A"
                                (and *current-status* (send *current-status* :action-status)))
                 (ros::ros-info ";; on-interruption...")
@@ -560,6 +562,8 @@
           (let* ((prev-rs (assoc key prev-robot-state))
                  (eps (or (cdr (assoc key eps-dict)) eps))
                  (res (eps-rec= (cdr prev-rs) (cdr rs) eps)))
+            (ros::ros-info ";; Robot State: ~A~ ~A ~A" key
+                           (cdr prev-rs) (cdr rs))
             (setq *eps-rec=-last-argument* (list prev-rs rs))
             (if (not res)
                 (return-from robot-state-eps= nil))))))
@@ -606,10 +610,10 @@
       (return-from check-state nil))
   (if (not (derivedp interrupt-state interruption-snapshot))
       (error type-error "interruption-snapshot expected"))
+  (send ri :spin-once)
   (if (and (null (send interrupt-state :current-state))
            (send interrupt-state :get-tint))
       (error "interruption has environment dependencies, but monitoring hasn't been started!"))
-  (send ri :spin-once)
 
   (labels ((test-occlusion (a b)
              (when (and collision-model
