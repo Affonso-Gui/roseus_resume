@@ -603,6 +603,7 @@
                          robot-state-blacklist
                          robot-state-whitelist
                          robot-state-eps-dict
+                         check-collision
                          (collision-model (ri . user::robot))
                          (collision-range 50.0))
   ;; check if the interrupted state is similar to the current state
@@ -628,7 +629,7 @@
                          (send interrupt-state :current-state)
                          environment-state-eps
                          environment-state-eps
-                         :test #'test-occlusion))
+                         :test (if check-collision #'test-occlusion)))
       (ros::ros-info ";; Environment State Mismatch at: ~A" *eps-rec=-last-argument*)
       (log:log-debug "INTERRUPTION STATE: ~A" (send interrupt-state :get-tint))
       (if (<= log::*logger-level* (log::get-level :debug))
