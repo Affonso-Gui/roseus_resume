@@ -683,6 +683,8 @@
         (dolist (gtint gripper-tint)
           (let* ((limb (car gtint))
                  (mark (cdr gtint))
+                 ;; TODO: gripper marking is robot-dependent
+                 ;; (key (intern (format nil "~A-CARD" (string limb)) *keyword-package*))
                  (key (intern (format nil "~A-POSITION" (string limb)) *keyword-package*)))
             (if (not (assoc key interrupt-robot-state))
                 (error value-error "Could not find ~A in interrupted robot state" key))
