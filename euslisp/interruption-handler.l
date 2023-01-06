@@ -389,7 +389,10 @@
                          :interruption-instance c)
                 (ros::ros-info ";; on-resume...")
                 (signals on-resume :status *current-status*))
-           (send *current-status* :stop-monitoring)))))))
+           ;; the *current-status* might be changed after a rewire.
+           ;; catch any potential errors and continue execution
+           (handler-case (send *current-status* :stop-monitoring)
+             (error (e) (lisp::print-error-message e)))))))))
 
 ;; install callback
 (defun install-interruption-handler (ri &rest additional-controllers)
@@ -562,7 +565,7 @@
           (let* ((prev-rs (assoc key prev-robot-state))
                  (eps (or (cdr (assoc key eps-dict)) eps))
                  (res (eps-rec= (cdr prev-rs) (cdr rs) eps)))
-            (ros::ros-info ";; Robot State: ~A~ ~A ~A" key
+            (ros::ros-info ";; Robot State: ~A ~A ~A" key
                            (cdr prev-rs) (cdr rs))
             (setq *eps-rec=-last-argument* (list prev-rs rs))
             (if (not res)
