@@ -5,11 +5,12 @@
 
 (defun reset-lstm-models-from-tint (ckpt)
   ;; reset reaching models
-  (let ((limb (car (get-tint-mark (ckpt . tint) #'keywordp)))
+  (let ((limbs (mapcar #'car (remove-if-not #'keywordp (ckpt . tint) :key #'car)))
         (obj (car (get-tint-mark (ckpt . tint)))))
-    (if (and limb obj
-             (memq (send ckpt :motion-intent obj) '(:absolute :relative)))
-        (roseus_resume::reset-lstm-models limb obj)))
+    (dolist (limb limbs)
+      (if (and obj
+               (memq (send ckpt :motion-intent obj) '(:absolute :relative)))
+          (roseus_resume::reset-lstm-models limb obj))))
   ;; reset manipulation models
   (dolist (mark (ckpt . gripper-tint))
     (let ((limb (car mark))
