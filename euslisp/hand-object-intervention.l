@@ -22,9 +22,9 @@
 
 (defvar *intersection-resume-wait-time* 0.5)
 
-(defcondition hand-object-intersection)
+(defcondition hand-object-intersection :slots (topic-name))
 (defun stop-intersection (c)
-  (ros::ros-info ";; Intersection detected! Stopping...")
+  (ros::ros-info ";; Intersection detected in ~A! Stopping..." (send c :topic-name))
   (let* ((server (find-if #'(lambda (x) (send x :is-active)) roseus_bt::*action-list*))
          (goal (and server (send server :get-val "GOAL")))
          (timer (instance user::mtimer :init)))
@@ -74,7 +74,7 @@
        (install-handler ,condition-name
                         #'(lambda (c)
                             (if (assoc ,object-topic (get-current-angle-vector-tint) :test #'equal)
-                                (signals hand-object-intersection)))))))
+                                (signals hand-object-intersection :topic-name ,topic)))))))
 
 (defmacro install-hand-intersection (topic arm &optional groupname)
   ;; always stop motion, independently of manipulation state
