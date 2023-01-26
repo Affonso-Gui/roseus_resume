@@ -618,9 +618,10 @@
   (if (not (derivedp interrupt-state interruption-snapshot))
       (error type-error "interruption-snapshot expected"))
   (send ri :spin-once)
-  (if (and (null (send interrupt-state :current-state))
+  (when (and (null (send interrupt-state :current-state))
            (send interrupt-state :get-tint))
-      (error "interruption has environment dependencies, but monitoring hasn't been started!"))
+    (ros::ros-error ";; Interruption has environment dependencies, but monitoring hasn't been started!")
+    (return-from check-state nil))
 
   (labels ((test-occlusion (a b)
              (when (and collision-model
