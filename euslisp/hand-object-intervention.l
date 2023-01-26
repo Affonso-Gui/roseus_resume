@@ -46,6 +46,9 @@
                        (lisp::atomic
                            (progn
                              (ros::ros-info ";; Sending result after intersection...")
+                             (when roseus_resume:*current-status*
+                               (ros::ros-info ";; Resetting monitor...")
+                               (send roseus_resume:*current-status* :reset-monitoring))
                              (send server :set-succeeded
                                    (send server :result :success nil)))
                          (condition ()))))))
@@ -56,7 +59,7 @@
               ;; dispatch the interruption callback
               (print "Exitting...")
               (ros::ros-info ";; Stashing current progress")
-              (signals roseus_bt:interrupt-action))
+              (signals roseus_bt:interrupt-action :server server :goal (send server :goal)))
             ;; no wait time
             ;; canceling the action will handle everything for us
             (signals roseus_bt:cancel-action))))))
